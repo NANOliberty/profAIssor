@@ -1,3 +1,4 @@
+import { Mic, Send, Square } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { evaluateAnswer, fetchQuestion } from '../api'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
@@ -140,13 +141,15 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
   }
 
   return (
-    <div className="mx-auto flex h-screen max-w-3xl flex-col px-4 py-6">
-      {/* header */}
-      <div className="mb-4 flex items-center justify-between">
+    <div className="mx-auto max-w-3xl space-y-4">
+      {/* Persona banner + progress */}
+      <div className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-5 py-3.5 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="text-3xl">{persona.emoji}</span>
+          <span className="flex h-9 w-9 select-none items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-lg">
+            {persona.emoji}
+          </span>
           <div>
-            <div className="font-semibold">{persona.name}</div>
+            <div className="text-sm font-bold text-slate-800">{persona.name}</div>
             <div className="text-xs text-slate-400">현재 상대 페르소나</div>
           </div>
         </div>
@@ -157,15 +160,15 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
               className={
                 'h-2 w-8 rounded-full ' +
                 (i < personaIndex
-                  ? 'bg-indigo-500'
+                  ? 'bg-indigo-600'
                   : i === personaIndex
-                    ? 'bg-indigo-400 animate-pulse'
-                    : 'bg-slate-700')
+                    ? 'animate-pulse bg-indigo-400'
+                    : 'bg-slate-200')
               }
               title={getPersona(id).name}
             />
           ))}
-          <span className="ml-2 text-xs text-slate-400">
+          <span className="ml-2 text-xs font-semibold text-slate-400">
             {personaIndex + 1} / {personaIds.length}
           </span>
         </div>
@@ -174,14 +177,14 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
       {/* chat log */}
       <div
         ref={scrollRef}
-        className="flex-1 space-y-4 overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/40 p-4"
+        className="flex h-[420px] flex-col space-y-4 overflow-y-auto rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"
       >
         {messages.map((m, i) => {
           const p = getPersona(m.personaId)
           if (m.role === 'answer') {
             return (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-indigo-600 px-4 py-2 text-sm">
+                <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-indigo-600 px-4 py-2.5 text-sm text-white shadow-sm">
                   {m.text}
                 </div>
               </div>
@@ -190,7 +193,7 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
           if (m.role === 'verdict') {
             return (
               <div key={i} className="flex justify-center">
-                <div className="w-full max-w-[90%] whitespace-pre-wrap rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-2 text-xs text-slate-300">
+                <div className="w-full max-w-[90%] whitespace-pre-wrap rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs leading-relaxed text-slate-600">
                   {m.text}
                 </div>
               </div>
@@ -198,40 +201,46 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
           }
           return (
             <div key={i} className="flex justify-start">
-              <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-slate-700 bg-slate-800 px-4 py-2 text-sm">
-                <div className="mb-1 text-xs font-semibold text-indigo-300">
-                  {p.emoji} {p.name}
+              <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-2.5 text-sm shadow-sm">
+                <div className="mb-1 flex items-center gap-1 text-xs font-bold text-indigo-600">
+                  <span>{p.emoji}</span>
+                  {p.name}
                 </div>
-                <span className="whitespace-pre-wrap">{m.text}</span>
+                <span className="whitespace-pre-wrap text-slate-700">{m.text}</span>
               </div>
             </div>
           )
         })}
         {busy && (
           <div className="flex justify-start">
-            <div className="rounded-2xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-400">
+            <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-400 shadow-sm">
               생각 중…
+              <div className="flex gap-1">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '0ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '150ms' }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-600" style={{ animationDelay: '300ms' }} />
+              </div>
             </div>
           </div>
         )}
       </div>
 
       {error && (
-        <div className="mt-3 rounded-lg border border-rose-700 bg-rose-950/40 px-4 py-2 text-sm text-rose-300">
+        <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm text-rose-600">
           오류: {error}
         </div>
       )}
 
       {/* live dictation preview */}
       {listening && (
-        <div className="mt-3 flex items-center gap-2 text-xs text-indigo-300">
+        <div className="flex items-center gap-2 text-xs text-indigo-600">
           <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500" />
           받아쓰는 중… <span className="text-slate-400">{interim || '(말해보세요)'}</span>
         </div>
       )}
 
       {/* answer input */}
-      <div className="mt-4 flex gap-2">
+      <div className="flex gap-2 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm">
         {sttSupported && (
           <button
             type="button"
@@ -240,13 +249,17 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
             disabled={busy || !question}
             title={listening ? '받아쓰기 중지' : '음성으로 답변 (STT)'}
             className={
-              'flex h-auto w-12 shrink-0 items-center justify-center rounded-xl border text-xl transition disabled:cursor-not-allowed disabled:opacity-40 ' +
+              'flex h-auto w-12 shrink-0 items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-40 ' +
               (listening
-                ? 'border-rose-500 bg-rose-500/20 text-rose-300 animate-pulse'
-                : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-indigo-500 hover:text-indigo-300')
+                ? 'border-rose-300 bg-rose-50 text-rose-500'
+                : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-indigo-400 hover:text-indigo-600')
             }
           >
-            {listening ? '⏹' : '🎙'}
+            {listening ? (
+              <Square className="h-4 w-4 fill-current" />
+            ) : (
+              <Mic className="h-4 w-4" />
+            )}
           </button>
         )}
         <textarea
@@ -257,17 +270,18 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
           rows={2}
           placeholder={
             sttSupported
-              ? '답변을 입력하거나 🎙 버튼으로 말하세요… (Ctrl/⌘ + Enter 로 전송)'
+              ? '답변을 입력하거나 마이크 버튼으로 말하세요… (Ctrl/⌘ + Enter 로 전송)'
               : '답변을 입력하세요… (Ctrl/⌘ + Enter 로 전송)'
           }
-          className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm outline-none focus:border-indigo-500 disabled:opacity-50"
+          className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3 text-sm text-slate-700 outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
         />
         <button
           type="button"
           onClick={() => void submit()}
           disabled={busy || !question || !answer.trim()}
-          className="shrink-0 rounded-xl bg-indigo-600 px-6 font-semibold transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
+          <Send className="h-4 w-4" />
           답변
         </button>
       </div>

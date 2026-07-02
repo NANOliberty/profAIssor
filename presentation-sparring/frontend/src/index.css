@@ -6,5 +6,5 @@ html, body, #root {
   height: 100%;
 }
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  @apply bg-[#F9FAFB] text-slate-900 antialiased;
 }
