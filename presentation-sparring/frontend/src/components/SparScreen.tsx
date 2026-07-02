@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { evaluateAnswer, fetchQuestion } from '../api'
+import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { getPersona } from '../personas'
 import type { ChatMessage, PersonaId, Slide, TranscriptTurn } from '../types'
 
@@ -19,9 +20,26 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [interim, setInterim] = useState('')
+
   const transcriptRef = useRef<TranscriptTurn[]>([])
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // 🎙 STT: dictation appends recognized text into the answer box (additive —
+  // the text loop is unchanged; the user can still type/edit before sending).
+  const {
+    supported: sttSupported,
+    listening,
+    toggle: toggleMic,
+    stop: stopMic,
+  } = useSpeechRecognition({
+    onFinal: (text) => {
+      if (!text) return
+      setAnswer((prev) => (prev.trim() ? prev.trimEnd() + ' ' : '') + text)
+    },
+    onInterim: setInterim,
+  })
 
   const activePersonaId = personaIds[personaIndex]
   const persona = getPersona(activePersonaId)
@@ -58,6 +76,8 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
 
   const submit = async () => {
     if (!question || !answer.trim() || busy) return
+    stopMic()
+    setInterim('')
     const pid = activePersonaId
     const q = question
     const currentTurn = turn
@@ -202,15 +222,44 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
         </div>
       )}
 
+      {/* live dictation preview */}
+      {listening && (
+        <div className="mt-3 flex items-center gap-2 text-xs text-indigo-300">
+          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500" />
+          받아쓰는 중… <span className="text-slate-400">{interim || '(말해보세요)'}</span>
+        </div>
+      )}
+
       {/* answer input */}
       <div className="mt-4 flex gap-2">
+        {sttSupported && (
+          <button
+            type="button"
+            data-testid="mic-btn"
+            onClick={toggleMic}
+            disabled={busy || !question}
+            title={listening ? '받아쓰기 중지' : '음성으로 답변 (STT)'}
+            className={
+              'flex h-auto w-12 shrink-0 items-center justify-center rounded-xl border text-xl transition disabled:cursor-not-allowed disabled:opacity-40 ' +
+              (listening
+                ? 'border-rose-500 bg-rose-500/20 text-rose-300 animate-pulse'
+                : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:border-indigo-500 hover:text-indigo-300')
+            }
+          >
+            {listening ? '⏹' : '🎙'}
+          </button>
+        )}
         <textarea
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           onKeyDown={onKeyDown}
           disabled={busy || !question}
           rows={2}
-          placeholder="답변을 입력하세요… (Ctrl/⌘ + Enter 로 전송)"
+          placeholder={
+            sttSupported
+              ? '답변을 입력하거나 🎙 버튼으로 말하세요… (Ctrl/⌘ + Enter 로 전송)'
+              : '답변을 입력하세요… (Ctrl/⌘ + Enter 로 전송)'
+          }
           className="flex-1 resize-none rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-sm outline-none focus:border-indigo-500 disabled:opacity-50"
         />
         <button
