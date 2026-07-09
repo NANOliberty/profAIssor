@@ -3,7 +3,7 @@ import { fetchReport } from './api'
 import ReportScreen from './components/ReportScreen'
 import SetupScreen from './components/SetupScreen'
 import SparScreen from './components/SparScreen'
-import type { PersonaId, Report, Slide, Stage, TranscriptTurn } from './types'
+import type { AcademicField, Difficulty, PersonaId, Report, Slide, Stage, TranscriptTurn } from './types'
 
 const STEP_LABELS: Record<Stage, string> = {
   setup: '1. 발표 자료 등록',
@@ -17,6 +17,9 @@ export default function App() {
   const [script, setScript] = useState('')
   const [slides, setSlides] = useState<Slide[]>([])
   const [personaIds, setPersonaIds] = useState<PersonaId[]>([])
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium')
+  const [maxTurns, setMaxTurns] = useState(2)
+  const [field, setField] = useState<AcademicField | null>(null)
   const [report, setReport] = useState<Report | null>(null)
   const [reportError, setReportError] = useState<string | null>(null)
   const [loadingReport, setLoadingReport] = useState(false)
@@ -25,10 +28,16 @@ export default function App() {
     script: string
     slides: Slide[]
     personaIds: PersonaId[]
+    difficulty: Difficulty
+    maxTurns: number
+    field: AcademicField | null
   }) => {
     setScript(data.script)
     setSlides(data.slides)
     setPersonaIds(data.personaIds)
+    setDifficulty(data.difficulty)
+    setMaxTurns(data.maxTurns)
+    setField(data.field)
     setStage('spar')
   }
 
@@ -37,7 +46,7 @@ export default function App() {
     setReportError(null)
     setStage('report')
     try {
-      const r = await fetchReport(script, slides, transcript)
+      const r = await fetchReport(script, slides, transcript, field)
       setReport(r)
     } catch (e) {
       setReportError(e instanceof Error ? e.message : String(e))
@@ -105,7 +114,15 @@ export default function App() {
         {stage === 'setup' && <SetupScreen onStart={handleStart} />}
 
         {stage === 'spar' && (
-          <SparScreen script={script} slides={slides} personaIds={personaIds} onFinish={handleFinish} />
+          <SparScreen
+            script={script}
+            slides={slides}
+            personaIds={personaIds}
+            difficulty={difficulty}
+            maxTurns={maxTurns}
+            field={field}
+            onFinish={handleFinish}
+          />
         )}
 
         {stage === 'report' && (
