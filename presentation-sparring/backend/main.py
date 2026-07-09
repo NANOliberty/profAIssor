@@ -11,7 +11,7 @@ load_dotenv()
 
 import llm_client
 import prompts
-from personas import get_model_hint, get_persona
+from personas import get_field_hint, get_model_hint, get_persona
 from schemas import (
     EvaluateRequest,
     EvaluateResponse,
@@ -45,8 +45,9 @@ def health():
 @app.post("/api/questions", response_model=QuestionResponse)
 def questions(req: QuestionRequest):
     persona = get_persona(req.persona_id)
+    persona_system = persona["system"] + get_field_hint(req.field)
     system, user = prompts.build_question_prompt(
-        persona["system"], req.script, req.slides, req.difficulty
+        persona_system, req.script, req.slides, req.difficulty
     )
     try:
         data = llm_client.chat_json(system, user, get_model_hint(req.persona_id))
@@ -77,8 +78,9 @@ def _parse_rubric(raw) -> Dict[str, str]:
 @app.post("/api/evaluate", response_model=EvaluateResponse)
 def evaluate(req: EvaluateRequest):
     persona = get_persona(req.persona_id)
+    persona_system = persona["system"] + get_field_hint(req.field)
     system, user = prompts.build_evaluate_prompt(
-        persona["system"], req.script, req.question, req.answer, req.turn, req.max_turns
+        persona_system, req.script, req.question, req.answer, req.turn, req.max_turns
     )
     try:
         data = llm_client.chat_json(system, user, get_model_hint(req.persona_id))

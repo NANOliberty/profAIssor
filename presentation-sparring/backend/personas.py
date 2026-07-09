@@ -46,6 +46,27 @@ PERSONAS: Dict[str, dict] = {
 
 DEFAULT_PERSONA = "professor"
 
+# Steering text appended to a persona's system prompt when the student
+# specifies their academic field, so questions lean toward what that field
+# actually values as rigor.
+FIELD_HINTS: Dict[str, str] = {
+    "engineering": (
+        "학생의 전공 계열은 공학입니다. 구체적인 수치, 구현 방법, 결과의 재현성을 "
+        "따지는 질문을 우선하세요 (예: '그 수치는 어떤 조건에서 측정했나요?', "
+        "'다른 환경에서도 재현되나요?')."
+    ),
+    "humanities": (
+        "학생의 전공 계열은 인문사회입니다. 이론적 근거, 개념의 출처, 사회적 함의를 "
+        "따지는 질문을 우선하세요 (예: '그 개념은 어떤 이론에 근거하나요?', "
+        "'그 주장이 실제 사회에 적용되면 어떤 영향이 있나요?')."
+    ),
+    "natural": (
+        "학생의 전공 계열은 자연과학입니다. 실험 설계의 타당성, 통계적 유의성, "
+        "변수 통제를 따지는 질문을 우선하세요 (예: '대조군은 어떻게 설정했나요?', "
+        "'그 차이가 통계적으로 유의한가요?')."
+    ),
+}
+
 
 def get_persona(persona_id: str) -> dict:
     return PERSONAS.get(persona_id, PERSONAS[DEFAULT_PERSONA])
@@ -53,3 +74,10 @@ def get_persona(persona_id: str) -> dict:
 
 def get_model_hint(persona_id: str) -> Optional[str]:
     return get_persona(persona_id).get("model_hint")
+
+
+def get_field_hint(field: Optional[str]) -> str:
+    if not field:
+        return ""
+    hint = FIELD_HINTS.get(field)
+    return f"\n\n{hint}" if hint else ""

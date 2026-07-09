@@ -3,6 +3,7 @@ from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 Difficulty = Literal["easy", "medium", "hard"]
+AcademicField = Literal["engineering", "humanities", "natural"]
 
 
 class Slide(BaseModel):
@@ -16,6 +17,7 @@ class QuestionRequest(BaseModel):
     slides: List[Slide] = Field(default_factory=list)
     persona_id: str
     difficulty: Difficulty = "medium"
+    field: Optional[AcademicField] = None
 
 
 class QuestionResponse(BaseModel):
@@ -31,6 +33,7 @@ class EvaluateRequest(BaseModel):
     answer: str
     turn: int = 0
     max_turns: int = Field(default=2, ge=0, le=5)
+    field: Optional[AcademicField] = None
 
 
 class EvaluateResponse(BaseModel):
@@ -54,6 +57,7 @@ class ReportRequest(BaseModel):
     script: str
     slides: List[Slide] = Field(default_factory=list)
     transcript: List[TranscriptTurn] = Field(default_factory=list)
+    field: Optional[AcademicField] = None
 
 
 class SlideCoverage(BaseModel):
