@@ -1,5 +1,8 @@
 export type PersonaId = 'professor' | 'peer' | 'layperson'
 
+export type Difficulty = 'easy' | 'medium' | 'hard'
+export type AcademicField = 'engineering' | 'humanities' | 'natural'
+
 export interface Persona {
   id: PersonaId
   name: string
@@ -22,6 +25,7 @@ export interface EvaluateResponse {
   strengths: string
   gaps: string
   followup: string | null
+  rubric: Record<string, string>
 }
 
 export interface TranscriptTurn {
@@ -54,4 +58,5 @@ export interface ChatMessage {
   role: 'question' | 'answer' | 'verdict'
   personaId: PersonaId
   text: string
+  rubric?: Record<string, string>
 }

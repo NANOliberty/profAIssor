@@ -3,16 +3,27 @@ import { useEffect, useRef, useState } from 'react'
 import { evaluateAnswer, fetchQuestion } from '../api'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
 import { getPersona } from '../personas'
-import type { ChatMessage, PersonaId, Slide, TranscriptTurn } from '../types'
+import type { AcademicField, ChatMessage, Difficulty, PersonaId, Slide, TranscriptTurn } from '../types'
 
 interface Props {
   script: string
   slides: Slide[]
   personaIds: PersonaId[]
+  difficulty: Difficulty
+  maxTurns: number
+  field: AcademicField | null
   onFinish: (transcript: TranscriptTurn[]) => void
 }
 
-export default function SparScreen({ script, slides, personaIds, onFinish }: Props) {
+export default function SparScreen({
+  script,
+  slides,
+  personaIds,
+  difficulty,
+  maxTurns,
+  field,
+  onFinish,
+}: Props) {
   const [personaIndex, setPersonaIndex] = useState(0)
   const [turn, setTurn] = useState(0)
   const [question, setQuestion] = useState<string | null>(null)
@@ -53,7 +64,7 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
     setError(null)
     try {
       const pid = personaIds[pIndex]
-      const q = await fetchQuestion(script, slides, pid)
+      const q = await fetchQuestion(script, slides, pid, difficulty, field)
       setQuestion(q.question)
       pushMessage({ role: 'question', personaId: pid, text: q.question })
     } catch (e) {
@@ -95,11 +106,14 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
         question: q,
         answer: studentAnswer,
         turn: currentTurn,
+        maxTurns,
+        field,
       })
       pushMessage({
         role: 'verdict',
         personaId: pid,
         text: `평가: ${ev.verdict}\n👍 ${ev.strengths}\n⚠️ ${ev.gaps}`,
+        rubric: ev.rubric,
       })
       transcriptRef.current.push({
         persona_id: pid,
@@ -191,10 +205,30 @@ export default function SparScreen({ script, slides, personaIds, onFinish }: Pro
             )
           }
           if (m.role === 'verdict') {
+            const rubricEntries = m.rubric ? Object.entries(m.rubric) : []
             return (
               <div key={i} className="flex justify-center">
-                <div className="w-full max-w-[90%] whitespace-pre-wrap rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs leading-relaxed text-slate-600">
-                  {m.text}
+                <div className="w-full max-w-[90%] space-y-2 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs leading-relaxed text-slate-600">
+                  <div className="whitespace-pre-wrap">{m.text}</div>
+                  {rubricEntries.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {rubricEntries.map(([axis, value]) => (
+                        <span
+                          key={axis}
+                          className={
+                            'rounded-full px-2 py-0.5 text-[10px] font-semibold ' +
+                            (value === '우수'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : value === '보통'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-rose-50 text-rose-700')
+                          }
+                        >
+                          {axis} {value}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             )

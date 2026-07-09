@@ -1,4 +1,6 @@
 import type {
+  AcademicField,
+  Difficulty,
   EvaluateResponse,
   PersonaId,
   QuestionResponse,
@@ -26,8 +28,16 @@ export function fetchQuestion(
   script: string,
   slides: Slide[],
   personaId: PersonaId,
+  difficulty: Difficulty,
+  field: AcademicField | null,
 ): Promise<QuestionResponse> {
-  return post('/api/questions', { script, slides, persona_id: personaId })
+  return post('/api/questions', {
+    script,
+    slides,
+    persona_id: personaId,
+    difficulty,
+    field,
+  })
 }
 
 export function evaluateAnswer(args: {
@@ -36,6 +46,8 @@ export function evaluateAnswer(args: {
   question: string
   answer: string
   turn: number
+  maxTurns: number
+  field: AcademicField | null
 }): Promise<EvaluateResponse> {
   return post('/api/evaluate', {
     script: args.script,
@@ -43,6 +55,8 @@ export function evaluateAnswer(args: {
     question: args.question,
     answer: args.answer,
     turn: args.turn,
+    max_turns: args.maxTurns,
+    field: args.field,
   })
 }
 
@@ -50,6 +64,7 @@ export function fetchReport(
   script: string,
   slides: Slide[],
   transcript: TranscriptTurn[],
+  field: AcademicField | null,
 ): Promise<Report> {
-  return post('/api/report', { script, slides, transcript })
+  return post('/api/report', { script, slides, transcript, field })
 }

@@ -1,12 +1,31 @@
-import { FileText, Sparkles, Users } from 'lucide-react'
+import { FileText, Settings2, Sparkles, Users } from 'lucide-react'
 import { useState } from 'react'
 import { PERSONAS } from '../personas'
-import type { PersonaId, Slide } from '../types'
+import type { AcademicField, Difficulty, PersonaId, Slide } from '../types'
 import SlideInput from './SlideInput'
 
 interface Props {
-  onStart: (data: { script: string; slides: Slide[]; personaIds: PersonaId[] }) => void
+  onStart: (data: {
+    script: string
+    slides: Slide[]
+    personaIds: PersonaId[]
+    difficulty: Difficulty
+    maxTurns: number
+    field: AcademicField | null
+  }) => void
 }
+
+const DIFFICULTY_OPTIONS: { id: Difficulty; label: string }[] = [
+  { id: 'easy', label: '쉬움' },
+  { id: 'medium', label: '보통' },
+  { id: 'hard', label: '어려움' },
+]
+
+const FIELD_OPTIONS: { id: AcademicField; label: string }[] = [
+  { id: 'engineering', label: '공학' },
+  { id: 'humanities', label: '인문사회' },
+  { id: 'natural', label: '자연과학' },
+]
 
 const SAMPLE_SCRIPT =
   '안녕하세요. 저희 연구는 트랜스포머 모델의 어텐션 계산 효율성을 개선하는 방법을 제안합니다. ' +
@@ -23,6 +42,9 @@ export default function SetupScreen({ onStart }: Props) {
   const [script, setScript] = useState(SAMPLE_SCRIPT)
   const [slides, setSlides] = useState<Slide[]>(SAMPLE_SLIDES)
   const [selected, setSelected] = useState<PersonaId[]>(['professor', 'peer'])
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium')
+  const [maxTurns, setMaxTurns] = useState(2)
+  const [field, setField] = useState<AcademicField | null>(null)
 
   const toggle = (id: PersonaId) => {
     setSelected((prev) =>
@@ -120,10 +142,91 @@ export default function SetupScreen({ onStart }: Props) {
             </div>
           </div>
 
+          <div className="space-y-5 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+              <Settings2 className="h-5 w-5 text-indigo-500" />
+              세부 설정
+            </h2>
+
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-500">질문 난이도</span>
+              <div className="flex gap-2">
+                {DIFFICULTY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setDifficulty(opt.id)}
+                    className={
+                      'flex-1 rounded-lg border-2 py-2 text-sm font-semibold transition-all ' +
+                      (difficulty === opt.id
+                        ? 'border-indigo-600 bg-indigo-50/40 text-indigo-700'
+                        : 'border-slate-100 text-slate-500 hover:border-slate-200')
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-500">최대 꼬리질문 횟수</span>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMaxTurns((n) => Math.max(0, n - 1))}
+                  disabled={maxTurns <= 0}
+                  className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  −
+                </button>
+                <span className="w-6 text-center text-sm font-bold text-slate-800">{maxTurns}</span>
+                <button
+                  type="button"
+                  onClick={() => setMaxTurns((n) => Math.min(5, n + 1))}
+                  disabled={maxTurns >= 5}
+                  className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-slate-500">전공 계열 (선택)</span>
+              <div className="flex flex-wrap gap-2">
+                {FIELD_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setField((prev) => (prev === opt.id ? null : opt.id))}
+                    className={
+                      'rounded-lg border-2 px-3 py-1.5 text-xs font-semibold transition-all ' +
+                      (field === opt.id
+                        ? 'border-indigo-600 bg-indigo-50/40 text-indigo-700'
+                        : 'border-slate-100 text-slate-500 hover:border-slate-200')
+                    }
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <button
             type="button"
             disabled={!canStart}
-            onClick={() => onStart({ script, slides: slides.filter((s) => s.text.trim()), personaIds: selected })}
+            onClick={() =>
+              onStart({
+                script,
+                slides: slides.filter((s) => s.text.trim()),
+                personaIds: selected,
+                difficulty,
+                maxTurns,
+                field,
+              })
+            }
             className="w-full rounded-xl bg-indigo-600 py-4 text-lg font-semibold text-white shadow-lg shadow-indigo-600/10 transition-all hover:scale-[1.01] hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100"
           >
             스파링 시작 →
