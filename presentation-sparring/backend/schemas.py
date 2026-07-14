@@ -37,7 +37,9 @@ class EvaluateRequest(BaseModel):
     question: str
     answer: str
     turn: int = 0
-    max_turns: int = Field(default=2, ge=0, le=5)
+    # 최초 질문 이후 허용되는 최대 꼬리질문 횟수
+    # 기본값은 2회이며, 사용자는 0~3회 범위 내 선택
+    max_turns: int = Field(default=2, ge=0, le=3)
     field: Optional[AcademicField] = None
     # Presentation-specific terms (from the frontend's script/slide dictionary)
     # so the evaluator can look past likely STT mishearings in `answer`.
