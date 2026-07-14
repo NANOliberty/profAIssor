@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { fetchReport } from './api'
 import ReportScreen from './components/ReportScreen'
 import SetupScreen from './components/SetupScreen'
 import SparScreen from './components/SparScreen'
 import { loadSessions, saveSession } from './lib/sessionStore'
 import type { AcademicField, Difficulty, PersonaId, Report, Slide, Stage, TranscriptTurn } from './types'
+
+// recharts pulls in a sizable chart library — only load it when the user
+// actually visits the history screen, not on the initial setup/spar bundle.
+const HistoryScreen = lazy(() => import('./components/HistoryScreen'))
 
 // The wizard stepper covers setup→spar→report; 'history' is a separate,
 // always-available nav item outside this flow.
@@ -179,36 +183,9 @@ export default function App() {
         )}
 
         {stage === 'history' && (
-          <div className="mx-auto max-w-3xl space-y-4">
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">히스토리</h1>
-            {historySessions.length === 0 ? (
-              <p className="text-sm text-slate-500">아직 완료된 세션이 없습니다.</p>
-            ) : (
-              <ul className="space-y-2">
-                {historySessions.map((s) => (
-                  <li
-                    key={s.id}
-                    className="rounded-xl border border-slate-200/80 bg-white p-4 text-sm shadow-sm"
-                  >
-                    <div className="font-semibold text-slate-800">
-                      {new Date(s.completedAt).toLocaleString('ko-KR')}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      전공계열: {s.field ?? '미지정'} · 어절 수: {s.report.word_count} · 필러: {s.report.filler_count}회 · 예상
-                      발표 시간: ~{s.estMinutes.toFixed(1)}분
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <button
-              type="button"
-              onClick={handleRestart}
-              className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-indigo-300 hover:text-indigo-600"
-            >
-              새 스파링 시작
-            </button>
-          </div>
+          <Suspense fallback={<p className="text-center text-sm text-slate-400">불러오는 중…</p>}>
+            <HistoryScreen sessions={historySessions} onRestart={handleRestart} />
+          </Suspense>
         )}
       </main>
 
