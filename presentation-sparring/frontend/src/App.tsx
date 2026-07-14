@@ -3,14 +3,17 @@ import { fetchReport } from './api'
 import ReportScreen from './components/ReportScreen'
 import SetupScreen from './components/SetupScreen'
 import SparScreen from './components/SparScreen'
+import { loadSessions, saveSession } from './lib/sessionStore'
 import type { AcademicField, Difficulty, PersonaId, Report, Slide, Stage, TranscriptTurn } from './types'
 
-const STEP_LABELS: Record<Stage, string> = {
+// The wizard stepper covers setup→spar→report; 'history' is a separate,
+// always-available nav item outside this flow.
+const STEP_LABELS: Record<Exclude<Stage, 'history'>, string> = {
   setup: '1. 발표 자료 등록',
   spar: '2. 꼬리 질문 스파링',
   report: '3. 종합 피드백 리포트',
 }
-const STEP_ORDER: Stage[] = ['setup', 'spar', 'report']
+const STEP_ORDER: Exclude<Stage, 'history'>[] = ['setup', 'spar', 'report']
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('setup')
@@ -48,6 +51,12 @@ export default function App() {
     try {
       const r = await fetchReport(script, slides, transcript, field)
       setReport(r)
+      saveSession({
+        field,
+        personaIds,
+        report: r,
+        estMinutes: r.word_count > 0 ? r.word_count / 120 : 0,
+      })
     } catch (e) {
       setReportError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -61,7 +70,8 @@ export default function App() {
     setReportError(null)
   }
 
-  const currentStepIdx = STEP_ORDER.indexOf(stage)
+  const currentStepIdx = stage === 'history' ? -1 : STEP_ORDER.indexOf(stage)
+  const historySessions = stage === 'history' ? loadSessions() : []
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F9FAFB] font-sans text-slate-900 selection:bg-indigo-100">
@@ -84,29 +94,43 @@ export default function App() {
           </span>
         </div>
 
-        <nav className="hidden items-center gap-4 text-xs font-semibold text-slate-400 sm:flex sm:gap-6">
-          {STEP_ORDER.map((s, i) => (
-            <span
-              key={s}
-              className={
-                'flex items-center gap-2 transition-colors ' +
-                (i === currentStepIdx ? 'text-black' : i < currentStepIdx ? 'text-indigo-600' : '')
-              }
-            >
+        <div className="flex items-center gap-4 sm:gap-6">
+          <nav className="hidden items-center gap-4 text-xs font-semibold text-slate-400 sm:flex sm:gap-6">
+            {STEP_ORDER.map((s, i) => (
               <span
+                key={s}
                 className={
-                  'flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ' +
-                  (i <= currentStepIdx
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 text-slate-400')
+                  'flex items-center gap-2 transition-colors ' +
+                  (i === currentStepIdx ? 'text-black' : i < currentStepIdx ? 'text-indigo-600' : '')
                 }
               >
-                {i + 1}
+                <span
+                  className={
+                    'flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ' +
+                    (i <= currentStepIdx
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-300 text-slate-400')
+                  }
+                >
+                  {i + 1}
+                </span>
+                {STEP_LABELS[s].replace(/^\d+\.\s*/, '')}
               </span>
-              {STEP_LABELS[s].replace(/^\d+\.\s*/, '')}
-            </span>
-          ))}
-        </nav>
+            ))}
+          </nav>
+          <button
+            type="button"
+            onClick={() => setStage('history')}
+            className={
+              'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ' +
+              (stage === 'history'
+                ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                : 'border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600')
+            }
+          >
+            히스토리
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -152,6 +176,39 @@ export default function App() {
               <ReportScreen report={report} onRestart={handleRestart} />
             )}
           </>
+        )}
+
+        {stage === 'history' && (
+          <div className="mx-auto max-w-3xl space-y-4">
+            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">히스토리</h1>
+            {historySessions.length === 0 ? (
+              <p className="text-sm text-slate-500">아직 완료된 세션이 없습니다.</p>
+            ) : (
+              <ul className="space-y-2">
+                {historySessions.map((s) => (
+                  <li
+                    key={s.id}
+                    className="rounded-xl border border-slate-200/80 bg-white p-4 text-sm shadow-sm"
+                  >
+                    <div className="font-semibold text-slate-800">
+                      {new Date(s.completedAt).toLocaleString('ko-KR')}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      전공계열: {s.field ?? '미지정'} · 어절 수: {s.report.word_count} · 필러: {s.report.filler_count}회 · 예상
+                      발표 시간: ~{s.estMinutes.toFixed(1)}분
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              onClick={handleRestart}
+              className="rounded-xl border border-slate-200 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:border-indigo-300 hover:text-indigo-600"
+            >
+              새 스파링 시작
+            </button>
+          </div>
         )}
       </main>
 

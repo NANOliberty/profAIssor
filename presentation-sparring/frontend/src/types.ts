@@ -55,7 +55,7 @@ export interface Report {
   word_count: number
 }
 
-export type Stage = 'setup' | 'spar' | 'report'
+export type Stage = 'setup' | 'spar' | 'report' | 'history'
 
 /** A message rendered in the chat-style spar screen. */
 export interface ChatMessage {
