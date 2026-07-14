@@ -48,6 +48,7 @@ export default function SparScreen({
   const {
     supported: sttSupported,
     listening,
+    micError,
     toggle: toggleMic,
     stop: stopMic,
   } = useSpeechRecognition({
@@ -269,6 +270,12 @@ export default function SparScreen({
       {error && (
         <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm text-rose-600">
           오류: {error}
+        </div>
+      )}
+
+      {micError && (
+        <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm text-rose-600">
+          🎙 {micError}
         </div>
       )}
 

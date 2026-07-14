@@ -40,9 +40,21 @@ interface Options {
 interface SpeechRecognitionHook {
   supported: boolean
   listening: boolean
+  /** User-facing message for the most recent mic error, or null if none. */
+  micError: string | null
   start: () => void
   stop: () => void
   toggle: () => void
+}
+
+// Errors that mean listening can't continue — don't let onend auto-restart on these.
+const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'audio-capture'])
+
+const ERROR_MESSAGES: Record<string, string> = {
+  'not-allowed': '마이크 권한이 차단되어 있습니다. 브라우저 주소창의 마이크 아이콘에서 권한을 허용해주세요.',
+  'service-not-allowed': '마이크 권한이 차단되어 있습니다. 브라우저 주소창의 마이크 아이콘에서 권한을 허용해주세요.',
+  'audio-capture': '마이크를 찾을 수 없습니다. 마이크가 연결되어 있는지 확인해주세요.',
+  network: '음성 인식 서비스에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.',
 }
 
 /**
@@ -53,6 +65,7 @@ interface SpeechRecognitionHook {
 export function useSpeechRecognition({ lang = 'ko-KR', onFinal, onInterim }: Options): SpeechRecognitionHook {
   const [supported] = useState(() => getCtor() !== null)
   const [listening, setListening] = useState(false)
+  const [micError, setMicError] = useState<string | null>(null)
   const recRef = useRef<SpeechRecognitionLike | null>(null)
   const shouldListenRef = useRef(false)
   // Keep latest callbacks without re-creating the recognition instance.
@@ -82,8 +95,13 @@ export function useSpeechRecognition({ lang = 'ko-KR', onFinal, onInterim }: Opt
       }
       onInterimRef.current?.(interim)
     }
-    rec.onerror = () => {
-      // 'no-speech' / 'aborted' etc. — let onend handle restart/stop.
+    rec.onerror = (e) => {
+      if (FATAL_ERRORS.has(e.error)) {
+        shouldListenRef.current = false
+      }
+      const message = ERROR_MESSAGES[e.error]
+      if (message) setMicError(message)
+      // 'no-speech' / 'aborted' — expected/transient, let onend handle restart/stop.
     }
     rec.onend = () => {
       // The engine stops on silence; restart if the user hasn't toggled off.
@@ -114,6 +132,7 @@ export function useSpeechRecognition({ lang = 'ko-KR', onFinal, onInterim }: Opt
   const start = useCallback(() => {
     const rec = recRef.current
     if (!rec || shouldListenRef.current) return
+    setMicError(null)
     shouldListenRef.current = true
     try {
       rec.start()
@@ -141,5 +160,5 @@ export function useSpeechRecognition({ lang = 'ko-KR', onFinal, onInterim }: Opt
     else start()
   }, [start, stop])
 
-  return { supported, listening, start, stop, toggle }
+  return { supported, listening, micError, start, stop, toggle }
 }
