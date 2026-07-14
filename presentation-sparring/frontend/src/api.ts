@@ -6,6 +6,7 @@ import type {
   QuestionResponse,
   Report,
   Slide,
+  SlideExtractResponse,
   TranscriptTurn,
 } from './types'
 
@@ -22,6 +23,21 @@ async function post<T>(path: string, body: unknown): Promise<T> {
     throw new Error(`API ${path} failed (${res.status}): ${detail}`)
   }
   return res.json() as Promise<T>
+}
+
+export async function extractSlides(file: File): Promise<Slide[]> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch(`${BASE}/api/slides/extract`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '')
+    throw new Error(`API /api/slides/extract failed (${res.status}): ${detail}`)
+  }
+  const data = (await res.json()) as SlideExtractResponse
+  return data.slides
 }
 
 export function fetchQuestion(

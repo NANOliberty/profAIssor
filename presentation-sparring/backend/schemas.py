@@ -11,6 +11,11 @@ class Slide(BaseModel):
     text: str
 
 
+# --- /api/slides/extract ---
+class SlideExtractResponse(BaseModel):
+    slides: List[Slide]
+
+
 # --- /api/questions ---
 class QuestionRequest(BaseModel):
     script: str

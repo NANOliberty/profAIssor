@@ -1,4 +1,6 @@
-import { Plus, X } from 'lucide-react'
+import { Plus, Upload, X } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { extractSlides } from '../api'
 import type { Slide } from '../types'
 
 interface Props {
@@ -6,8 +8,26 @@ interface Props {
   onChange: (slides: Slide[]) => void
 }
 
-/** Dynamic list of slide-text inputs (add / remove / edit). */
+/** Dynamic list of slide-text inputs (add / remove / edit / PPT upload). */
 export default function SlideInput({ slides, onChange }: Props) {
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFile = async (file: File) => {
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const extracted = await extractSlides(file)
+      onChange(extracted)
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
   const update = (i: number, text: string) => {
     const next = slides.map((s, idx) => (idx === i ? { ...s, text } : s))
     onChange(next)
@@ -26,6 +46,36 @@ export default function SlideInput({ slides, onChange }: Props) {
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label
+          className={
+            'flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-4 py-2 text-sm font-medium text-slate-500 hover:border-indigo-400 hover:text-indigo-600 ' +
+            (uploading ? 'pointer-events-none opacity-50' : '')
+          }
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {uploading ? 'PPT에서 추출하는 중…' : 'PPT 업로드 (.pptx)'}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pptx"
+            className="hidden"
+            disabled={uploading}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) void handleFile(file)
+            }}
+          />
+        </label>
+        <span className="text-xs text-slate-400">업로드하면 아래 목록이 자동으로 채워집니다 (직접 수정 가능)</span>
+      </div>
+
+      {uploadError && (
+        <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm text-rose-600">
+          {uploadError}
+        </div>
+      )}
+
       {slides.map((slide, i) => (
         <div key={i} className="flex gap-2">
           <span className="mt-2 w-16 shrink-0 text-sm font-semibold text-indigo-600">

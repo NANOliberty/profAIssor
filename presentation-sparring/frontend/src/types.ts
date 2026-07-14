@@ -36,6 +36,10 @@ export interface TranscriptTurn {
   gaps: string
 }
 
+export interface SlideExtractResponse {
+  slides: Slide[]
+}
+
 export interface SlideCoverage {
   index: number
   covered: boolean
