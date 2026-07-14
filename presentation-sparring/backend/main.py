@@ -5,7 +5,7 @@ import re
 from typing import Dict, List
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 load_dotenv()
@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 import llm_client
+import ppt_extract
 import prompts
 from personas import get_field_hint, get_model_hint, get_persona
 from schemas import (
@@ -25,6 +26,7 @@ from schemas import (
     ReportResponse,
     Slide,
     SlideCoverage,
+    SlideExtractResponse,
 )
 
 app = FastAPI(title="Presentation Sparring API")
@@ -44,6 +46,44 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     return {"status": "ok", "provider": llm_client.PROVIDER}
+
+
+_MAX_PPT_SIZE = 20 * 1024 * 1024  # 20MB
+_PPTX_CONTENT_TYPES = {
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/octet-stream",  # many clients send this generically
+    "",
+}
+
+
+@app.post("/api/slides/extract", response_model=SlideExtractResponse)
+async def extract_slides_endpoint(file: UploadFile = File(...)):
+    filename = file.filename or ""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext == "ppt":
+        raise HTTPException(
+            status_code=400,
+            detail="구버전 .ppt 파일은 지원하지 않습니다. PowerPoint에서 .pptx로 저장 후 업로드해주세요.",
+        )
+    if ext != "pptx":
+        raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다. .pptx 파일만 업로드할 수 있습니다.")
+    if file.content_type and file.content_type not in _PPTX_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다. .pptx 파일만 업로드할 수 있습니다.")
+
+    content = await file.read()
+    if len(content) > _MAX_PPT_SIZE:
+        raise HTTPException(status_code=400, detail="파일 크기가 20MB를 초과합니다.")
+
+    try:
+        slides = ppt_extract.extract_slides(content)
+    except Exception:  # noqa: BLE001
+        logger.exception("PPT extraction failed for %s", filename)
+        raise HTTPException(
+            status_code=400,
+            detail="PPT 파일을 읽는 중 오류가 발생했습니다. 파일이 손상되지 않았는지 확인해주세요.",
+        )
+
+    return SlideExtractResponse(slides=slides)
 
 
 @app.post("/api/questions", response_model=QuestionResponse)
