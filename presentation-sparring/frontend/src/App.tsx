@@ -1,16 +1,23 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { fetchReport } from './api'
 import ReportScreen from './components/ReportScreen'
 import SetupScreen from './components/SetupScreen'
 import SparScreen from './components/SparScreen'
+import { loadSessions, saveSession } from './lib/sessionStore'
 import type { AcademicField, Difficulty, PersonaId, Report, Slide, Stage, TranscriptTurn } from './types'
 
-const STEP_LABELS: Record<Stage, string> = {
+// recharts pulls in a sizable chart library — only load it when the user
+// actually visits the history screen, not on the initial setup/spar bundle.
+const HistoryScreen = lazy(() => import('./components/HistoryScreen'))
+
+// The wizard stepper covers setup→spar→report; 'history' is a separate,
+// always-available nav item outside this flow.
+const STEP_LABELS: Record<Exclude<Stage, 'history'>, string> = {
   setup: '1. 발표 자료 등록',
   spar: '2. 꼬리 질문 스파링',
   report: '3. 종합 피드백 리포트',
 }
-const STEP_ORDER: Stage[] = ['setup', 'spar', 'report']
+const STEP_ORDER: Exclude<Stage, 'history'>[] = ['setup', 'spar', 'report']
 
 export default function App() {
   const [stage, setStage] = useState<Stage>('setup')
@@ -48,6 +55,12 @@ export default function App() {
     try {
       const r = await fetchReport(script, slides, transcript, field)
       setReport(r)
+      saveSession({
+        field,
+        personaIds,
+        report: r,
+        estMinutes: r.word_count > 0 ? r.word_count / 120 : 0,
+      })
     } catch (e) {
       setReportError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -61,7 +74,8 @@ export default function App() {
     setReportError(null)
   }
 
-  const currentStepIdx = STEP_ORDER.indexOf(stage)
+  const currentStepIdx = stage === 'history' ? -1 : STEP_ORDER.indexOf(stage)
+  const historySessions = stage === 'history' ? loadSessions() : []
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F9FAFB] font-sans text-slate-900 selection:bg-indigo-100">
@@ -84,29 +98,43 @@ export default function App() {
           </span>
         </div>
 
-        <nav className="hidden items-center gap-4 text-xs font-semibold text-slate-400 sm:flex sm:gap-6">
-          {STEP_ORDER.map((s, i) => (
-            <span
-              key={s}
-              className={
-                'flex items-center gap-2 transition-colors ' +
-                (i === currentStepIdx ? 'text-black' : i < currentStepIdx ? 'text-indigo-600' : '')
-              }
-            >
+        <div className="flex items-center gap-4 sm:gap-6">
+          <nav className="hidden items-center gap-4 text-xs font-semibold text-slate-400 sm:flex sm:gap-6">
+            {STEP_ORDER.map((s, i) => (
               <span
+                key={s}
                 className={
-                  'flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ' +
-                  (i <= currentStepIdx
-                    ? 'border-indigo-600 bg-indigo-600 text-white'
-                    : 'border-slate-300 text-slate-400')
+                  'flex items-center gap-2 transition-colors ' +
+                  (i === currentStepIdx ? 'text-black' : i < currentStepIdx ? 'text-indigo-600' : '')
                 }
               >
-                {i + 1}
+                <span
+                  className={
+                    'flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ' +
+                    (i <= currentStepIdx
+                      ? 'border-indigo-600 bg-indigo-600 text-white'
+                      : 'border-slate-300 text-slate-400')
+                  }
+                >
+                  {i + 1}
+                </span>
+                {STEP_LABELS[s].replace(/^\d+\.\s*/, '')}
               </span>
-              {STEP_LABELS[s].replace(/^\d+\.\s*/, '')}
-            </span>
-          ))}
-        </nav>
+            ))}
+          </nav>
+          <button
+            type="button"
+            onClick={() => setStage('history')}
+            className={
+              'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ' +
+              (stage === 'history'
+                ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                : 'border-slate-200 text-slate-500 hover:border-indigo-300 hover:text-indigo-600')
+            }
+          >
+            히스토리
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
@@ -152,6 +180,12 @@ export default function App() {
               <ReportScreen report={report} onRestart={handleRestart} />
             )}
           </>
+        )}
+
+        {stage === 'history' && (
+          <Suspense fallback={<p className="text-center text-sm text-slate-400">불러오는 중…</p>}>
+            <HistoryScreen sessions={historySessions} onRestart={handleRestart} />
+          </Suspense>
         )}
       </main>
 

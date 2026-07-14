@@ -1,4 +1,6 @@
 import { Brain, Mic, RotateCcw, Shield, Target } from 'lucide-react'
+import { coverageRate } from '../lib/coverage'
+import { loadSessions } from '../lib/sessionStore'
 import type { Report } from '../types'
 
 interface Props {
@@ -10,6 +12,15 @@ export default function ReportScreen({ report, onRestart }: Props) {
   // Rough speaking-rate estimate: assume ~120 어절/분 delivery pace.
   const estMinutes = report.word_count > 0 ? (report.word_count / 120).toFixed(1) : '0'
   const uncovered = report.slide_coverage.filter((s) => !s.covered)
+
+  // sessions[0] is this just-completed session (saveSession runs right
+  // before this screen renders) — sessions[1] is the one to compare against.
+  const previous = loadSessions()[1] ?? null
+  const fillerDelta = previous ? report.filler_count - previous.report.filler_count : null
+  const minutesDelta = previous ? Number(estMinutes) - previous.estMinutes : null
+  const coverageDelta = previous
+    ? coverageRate(report.slide_coverage) - coverageRate(previous.report.slide_coverage)
+    : null
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -75,10 +86,26 @@ export default function ReportScreen({ report, onRestart }: Props) {
       </section>
 
       {/* delivery metrics */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Metric label="필러 단어" value={`${report.filler_count}회`} hint='"어", "그", "음" 등' />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Metric
+          label="필러 단어"
+          value={`${report.filler_count}회`}
+          hint='"어", "그", "음" 등'
+          delta={fillerDelta == null ? null : { value: fillerDelta, goodDirection: 'down', unit: '회' }}
+        />
         <Metric label="총 어절 수" value={`${report.word_count}어절`} hint="대본 기준" />
-        <Metric label="예상 발표 시간" value={`~${estMinutes}분`} hint="약 120어절/분 기준" />
+        <Metric
+          label="예상 발표 시간"
+          value={`~${estMinutes}분`}
+          hint="약 120어절/분 기준"
+          delta={minutesDelta == null ? null : { value: Number(minutesDelta.toFixed(1)), goodDirection: 'down', unit: '분' }}
+        />
+        <Metric
+          label="슬라이드 커버리지"
+          value={`${coverageRate(report.slide_coverage)}%`}
+          hint="말로 전달된 비율"
+          delta={coverageDelta == null ? null : { value: coverageDelta, goodDirection: 'up', unit: '%p' }}
+        />
       </div>
 
       <button
@@ -105,12 +132,40 @@ function Card({ icon, title, body }: { icon: React.ReactNode; title: string; bod
   )
 }
 
-function Metric({ label, value, hint }: { label: string; value: string; hint: string }) {
+interface Delta {
+  value: number
+  /** Which direction of change counts as an improvement. */
+  goodDirection: 'up' | 'down'
+  unit: string
+}
+
+function Metric({
+  label,
+  value,
+  hint,
+  delta,
+}: {
+  label: string
+  value: string
+  hint: string
+  delta?: Delta | null
+}) {
   return (
     <div className="space-y-1 rounded-2xl border border-slate-200/80 bg-white p-4 text-center shadow-sm">
       <div className="text-2xl font-bold text-slate-900">{value}</div>
       <div className="text-sm font-medium text-slate-600">{label}</div>
       <div className="text-xs text-slate-400">{hint}</div>
+      {delta != null && delta.value !== 0 && (
+        <div
+          className={
+            'text-xs font-semibold ' +
+            ((delta.value < 0) === (delta.goodDirection === 'down') ? 'text-emerald-600' : 'text-rose-600')
+          }
+        >
+          {delta.value > 0 ? '▲' : '▼'} {Math.abs(delta.value)}
+          {delta.unit} (지난 세션 대비)
+        </div>
+      )}
     </div>
   )
 }
