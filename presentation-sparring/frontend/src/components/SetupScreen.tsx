@@ -52,8 +52,9 @@ export default function SetupScreen({ onStart }: Props) {
     )
   }
 
+  const hasContent = script.trim().length > 0 || slides.some((s) => s.text.trim().length > 0)
+
   const fillSample = () => {
-    const hasContent = script.trim().length > 0 || slides.some((s) => s.text.trim().length > 0)
     if (hasContent && !window.confirm('입력한 대본/슬라이드가 예시 데이터로 대체됩니다. 계속할까요?')) {
       return
     }
@@ -61,7 +62,9 @@ export default function SetupScreen({ onStart }: Props) {
     setSlides(SAMPLE_SLIDES)
   }
 
-  const canStart = script.trim().length > 0 && selected.length > 0
+  // 대본/슬라이드 중 하나만 있어도 시작 가능 — 슬라이드만 올린 경우 슬라이드
+  // 내용을 근거로, 대본만 쓴 경우 대본만으로 질문을 생성한다 (prompts.py 참고).
+  const canStart = hasContent && selected.length > 0
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -251,7 +254,7 @@ export default function SetupScreen({ onStart }: Props) {
           </button>
           {!canStart && (
             <p className="text-center text-xs text-slate-400">
-              {script.trim().length === 0 ? '발표 대본을 입력해야 시작할 수 있어요' : '청중 페르소나를 1개 이상 선택해주세요'}
+              {!hasContent ? '발표 대본 또는 슬라이드 중 하나는 입력해야 시작할 수 있어요' : '청중 페르소나를 1개 이상 선택해주세요'}
             </p>
           )}
         </div>

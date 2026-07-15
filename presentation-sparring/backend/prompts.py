@@ -13,6 +13,12 @@ def _format_slides(slides: List[Slide]) -> str:
     return "\n".join(f"[슬라이드 {s.index}] {s.text}" for s in slides)
 
 
+def _format_script(script: str) -> str:
+    if not script.strip():
+        return "(대본이 제공되지 않았습니다. 슬라이드 내용을 근거로 판단하세요.)"
+    return script
+
+
 _DIFFICULTY_HINTS = {
     "easy": "질문 난이도는 '쉬움'입니다. 단순 확인형 질문 하나만 던지세요 "
             "(예: 방금 말한 용어나 수치를 다시 확인하는 수준). 복합적인 압박은 피하세요.",
@@ -35,7 +41,7 @@ def build_question_prompt(persona_system: str, script: str, slides: List[Slide],
     )
     user = (
         "다음은 학생의 발표 대본과 슬라이드입니다.\n\n"
-        f"[발표 대본]\n{script}\n\n"
+        f"[발표 대본]\n{_format_script(script)}\n\n"
         f"[슬라이드]\n{_format_slides(slides)}\n\n"
         "위 발표에서 근거가 약하거나, 생략되었거나, 설명이 불충분한 지점을 "
         "당신의 페르소나 관점에서 공략하는 압박 질문을 정확히 1개만 만드세요. "
@@ -74,7 +80,7 @@ def build_evaluate_prompt(persona_system: str, script: str, question: str,
         + '"rubric": {"직접성": "부족|보통|우수", "근거": "부족|보통|우수", "논리": "부족|보통|우수"}}'
     )
     user = (
-        f"[발표 대본 요약 참고]\n{script[:1500]}\n\n"
+        f"[발표 대본 요약 참고]\n{_format_script(script)[:1500]}\n\n"
         f"[던진 질문]\n{question}\n\n"
         f"[학생 답변]\n{answer}\n\n"
         f"(현재 턴: {turn})\n위 답변을 평가하세요."
@@ -104,7 +110,7 @@ def build_report_prompt(script: str, slides: List[Slide],
         for t in transcript
     ) or "(질의응답 기록 없음)"
     user = (
-        f"[발표 대본]\n{script}\n\n"
+        f"[발표 대본]\n{_format_script(script)}\n\n"
         f"[슬라이드]\n{_format_slides(slides)}\n\n"
         f"[질의응답 기록]\n{transcript_text}\n\n"
         "위 세션을 종합해 축별 피드백과 슬라이드 커버리지를 JSON 으로 작성하세요. "

@@ -218,22 +218,31 @@ def report(req: ReportRequest):
             continue
 
     coverage: List[SlideCoverage] = []
-    for slide in sorted(req.slides, key=lambda s: s.index):
-        if slide.index in llm_cov:
-            c = llm_cov[slide.index]
-            covered = bool(c.get("covered", True))
-            mp = c.get("missing_point")
-            if isinstance(mp, str) and mp.strip().lower() in ("null", "none", ""):
-                mp = None
-            coverage.append(
-                SlideCoverage(
-                    index=slide.index,
-                    covered=covered,
-                    missing_point=None if covered else (mp or "핵심 내용이 대본에서 충분히 언급되지 않았습니다."),
+    if not req.script.strip():
+        # No script was provided (slides-only session) — there is nothing to
+        # compare slide content against, so don't claim slides are "missing"
+        # from a script that never existed.
+        coverage = [
+            SlideCoverage(index=s.index, covered=True, missing_point=None)
+            for s in sorted(req.slides, key=lambda s: s.index)
+        ]
+    else:
+        for slide in sorted(req.slides, key=lambda s: s.index):
+            if slide.index in llm_cov:
+                c = llm_cov[slide.index]
+                covered = bool(c.get("covered", True))
+                mp = c.get("missing_point")
+                if isinstance(mp, str) and mp.strip().lower() in ("null", "none", ""):
+                    mp = None
+                coverage.append(
+                    SlideCoverage(
+                        index=slide.index,
+                        covered=covered,
+                        missing_point=None if covered else (mp or "핵심 내용이 대본에서 충분히 언급되지 않았습니다."),
+                    )
                 )
-            )
-        else:
-            coverage.append(_fallback_coverage(slide, req.script))
+            else:
+                coverage.append(_fallback_coverage(slide, req.script))
 
     return ReportResponse(
         content_feedback=str(data.get("content_feedback", "")).strip(),
