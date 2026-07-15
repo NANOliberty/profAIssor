@@ -170,26 +170,37 @@ export default function SetupScreen({ onStart }: Props) {
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-slate-500">최대 꼬리질문 횟수</span>
+              <span className="text-xs font-semibold text-slate-500">
+                최대 꼬리질문 횟수
+              </span>
+
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setMaxTurns((n) => Math.max(0, n - 1))}
+                  onClick={() => setMaxTurns((current) => Math.max(0, current - 1))}
                   disabled={maxTurns <= 0}
                   className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   −
                 </button>
-                <span className="w-6 text-center text-sm font-bold text-slate-800">{maxTurns}</span>
+
+                <span className="w-6 text-center text-sm font-bold text-slate-800">
+                  {maxTurns}
+                </span>
+
                 <button
                   type="button"
-                  onClick={() => setMaxTurns((n) => Math.min(5, n + 1))}
-                  disabled={maxTurns >= 5}
+                  onClick={() => setMaxTurns((current) => Math.min(3, current + 1))}
+                  disabled={maxTurns >= 3}
                   className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   +
                 </button>
               </div>
+
+              <p className="text-xs leading-relaxed text-slate-400">
+                현재 설정: 최초 질문 1회 + 꼬리질문 최대 {maxTurns}회
+              </p>
             </div>
 
             <div className="space-y-2">
