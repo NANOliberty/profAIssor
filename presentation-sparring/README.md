@@ -46,24 +46,27 @@ npm run dev                   # http://localhost:5173
 
 ## LLM Provider 교체
 
-`backend/.env` 의 `LLM_PROVIDER` **한 줄만** 바꾸면 된다:
+`backend/.env`의 `LLM_PROVIDER` 값을 변경해 provider를 선택한다.
 
+```dotenv
+LLM_PROVIDER=mock  # openai | gemini | mock
+
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
-LLM_PROVIDER=mock          # openai | gemini | groq | anthropic | mock
-OPENAI_API_KEY=...
-GEMINI_API_KEY=...
-GROQ_API_KEY=...
-ANTHROPIC_API_KEY=...
-```
 
-- `mock` — API 키 없이 캔드 응답으로 전체 흐름을 데모 (오프라인 시연/개발용)
-- `openai` — OpenAI (`gpt-4o-mini`) — **프로덕션(Render) 기본값**
-- `gemini` — Google Gemini (`gemini-2.0-flash`)
-- `groq` — Groq (`llama-3.3-70b-versatile`)
-- `anthropic` — Anthropic Claude (`claude-sonnet-5`, 교수 페르소나는 `claude-opus-4-8` 상위 티어로 라우팅)
+- `mock` — API 키 없이 화면과 API 연결을 검사하는 개발·시연용 고정 응답
+- `openai` — OpenAI `gpt-4o-mini`, 현재 1차 MVP와 Render에서 사용하는 기본 provider
+- `gemini` — Google `gemini-3.1-flash-lite`, 추후 품질·비용 비교를 위한 대체 provider
 
-모든 provider는 `backend/llm_client.py` 의 `chat()` 하나 뒤에 숨겨져 있다.
-페르소나별 모델 티어 분리(`model_hint`)도 열려 있다.
+모든 provider는 `backend/llm_client.py`의 `chat()`과 `chat_json()` 뒤에 숨겨져 있다.
+
+각 provider는 환경변수에 지정한 **하나의 모델만 사용**한다. 교수·동료·일반 청중 persona는 질문 관점과 표현 방식만 바꾸며, `OPENAI_MODEL_HIGH` 같은 별도 상위 티어 모델로 라우팅하지 않는다.
+
+Groq와 Anthropic은 더이상 사용하지 않으므로 고려 대상에서 제외한다.
 
 ---
 
@@ -89,7 +92,7 @@ curl -X POST localhost:8000/api/report -H 'content-type: application/json' \
 
 - **프론트**: React 18 + TypeScript + Vite + Tailwind CSS
 - **백엔드**: Python + FastAPI + uvicorn
-- **LLM**: 환경변수로 교체 가능한 provider 추상화 (gemini / groq / anthropic / mock)
+- **LLM**: 환경변수로 교체 가능한 provider 추상화 (`openai` / `gemini` / `mock`)
 - **슬라이드 커버리지**: LLM 판정 + 키워드 오버랩 폴백 (모든 슬라이드가 항상 리포트에 표시됨)
 
 ## 스코프 밖 (본선 고도화)

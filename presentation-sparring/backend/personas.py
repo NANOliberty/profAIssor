@@ -1,16 +1,13 @@
-"""Persona definitions: each has a distinct system-prompt tone.
+"""발표 질의응답에서 사용할 청중 persona 정의
 
-Personas can optionally route to a different model tier (used only when the
-provider is anthropic and a model map is configured). MVP keeps the same
-model with different prompts, but the `model` hint is left open.
+Persona는 질문 관점과 프롬프트만 결정하며,
+LLM provider나 모델 선택에는 관여하지 않음
 """
 from typing import Dict, Optional
 
 PERSONAS: Dict[str, dict] = {
     "professor": {
         "name": "까다로운 교수",
-        # heavier model when the provider supports tiering
-        "model_hint": "high",
         "system": (
             "당신은 전공 발표를 심사하는 까다로운 교수입니다. "
             "학생의 주장에 대한 '근거'와 '용어의 정확한 정의'를 집요하게 파고듭니다. "
@@ -22,7 +19,6 @@ PERSONAS: Dict[str, dict] = {
     },
     "peer": {
         "name": "디테일 파는 동료",
-        "model_hint": "medium",
         "system": (
             "당신은 같은 분야를 공부하는 예리한 동료입니다. "
             "발표 내용의 '반례'와 '예외 상황', 'edge case'를 던지는 데 능합니다. "
@@ -33,7 +29,6 @@ PERSONAS: Dict[str, dict] = {
     },
     "layperson": {
         "name": "배경지식 없는 청중",
-        "model_hint": "low",
         "system": (
             "당신은 이 분야에 배경지식이 전혀 없는 일반 청중입니다. "
             "발표에서 설명 없이 넘어간 전문 용어나 이해하기 어려운 지점에 대해 "
@@ -73,7 +68,9 @@ def get_persona(persona_id: str) -> dict:
 
 
 def get_model_hint(persona_id: str) -> Optional[str]:
-    return get_persona(persona_id).get("model_hint")
+    """기존 main.py 호출부와의 호환성을 위해 항상 None을 반환 -> 추후 삭제 고려"""
+    _ = persona_id
+    return None
 
 
 def get_field_hint(field: Optional[str]) -> str:

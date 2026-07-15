@@ -38,15 +38,43 @@
 
 ---
 
-## Phase 0 — OpenAI(GPT-4o-mini) 연동 + 프로덕션 기본값 전환
+## Phase 0 — OpenAI(GPT-4o-mini) 연동 + provider별 단일 모델 구조 정리
 
-가장 작고 리스크가 큰 항목이라 최우선. 규모가 작아 스텝을 나누지 않고 한 번에 진행한다.
+Step 0-1에서 OpenAI 연동과 프로덕션 기본값 전환을 완료했고, Step 0-2에서 provider 및 모델 설정을 실제 운영 구조에 맞게 정리한다.
 
 - [ ] **Step 0-1**: `llm_client.py`에 `_call_openai()` 추가(`_call_groq`와 동일한 OpenAI 호환 REST 형태), `_MODEL_CONFIG["openai"]`(default/high 모두 `gpt-4o-mini`)와 `_DISPATCH` 등록. `.env.example`/`README.md`에 `LLM_PROVIDER=openai`, `OPENAI_API_KEY` 문서화. `render.yaml`의 `LLM_PROVIDER`를 `mock`→`openai`로, `OPENAI_API_KEY`(`sync: false`) 추가.
   - 파일: `backend/llm_client.py`, `backend/.env.example`, `README.md`, `render.yaml`
   - 완료 기준: 로컬에서 `LLM_PROVIDER=openai` + 실제 키로 `/api/questions` 호출 시 실제 GPT-4o-mini 응답이 옴
   - 확인: `curl localhost:8000/api/health` → `{"provider":"openai"}`, Render 배포 후 프로덕션 URL로 동일 테스트(대시보드에 `OPENAI_API_KEY` 수동 등록 필요)
   - 의존성: 없음
+
+- [ ] **추가: Step 0-2**: provider별 단일 모델 구조 정리
+- 파일:
+  - `backend/llm_client.py`
+  - `backend/personas.py`
+  - `backend/.env.example`
+  - `README.md`
+  - `render.yaml`
+- 작업:
+  - 지원 provider를 `openai`, `gemini`, `mock`으로 정리한다.
+  - OpenAI는 `OPENAI_MODEL=gpt-4o-mini` 하나만 사용한다.
+  - Gemini는 `GEMINI_MODEL=gemini-3.1-flash-lite` 하나만 사용한다.
+  - `OPENAI_MODEL_HIGH`, `GEMINI_MODEL_HIGH` 및 `default/high` 모델 티어 구조를 제거한다.
+  - Groq·Anthropic provider 코드와 관련 환경변수 문서를 제거한다.
+  - persona의 `model_hint` 값은 제거한다.
+  - 기존 `main.py` 호출부 호환을 위해 `get_model_hint()`와 `model_hint` 매개변수는 유지하되 모델 선택에는 사용하지 않는다.
+  - `chat()`과 `chat_json()`의 기존 공통 호출 인터페이스는 유지한다.
+- 완료 기준:
+  - 모든 persona가 현재 활성 provider에 설정된 하나의 모델만 사용한다.
+  - `OPENAI_MODEL_HIGH`를 임의로 설정해도 OpenAI 모델 선택에 영향을 주지 않는다.
+  - `LLM_PROVIDER=mock`에서 질문·평가·리포트 흐름이 정상 동작한다.
+  - `LLM_PROVIDER=openai`와 실제 API 키로 `/api/questions` 호출 시 GPT-4o-mini 응답이 반환된다.
+- 확인:
+  - `python -m py_compile llm_client.py personas.py`
+  - mock provider의 `/api/health`, `/api/questions` 호출
+  - 실제 OpenAI provider의 `/api/questions` 호출
+  - `OPENAI_MODEL_HIGH` 무시 여부 확인
+- 의존성: Step 0-1
 
 ---
 
@@ -163,6 +191,7 @@ Phase 1~4에서 새로 생긴 UI(난이도/계열 선택, PPT 업로드, History
 > Step을 시작할 때 `(담당: 이름)`을 채워 선점을 표시하고, 머지되면 `[x]`로 바꾼다.
 
 - [x] 0-1: OpenAI 연동 + 프로덕션 기본값 @cl-o-lc
+- [ ] 0-2: provider별 단일 모델 구조 정리 @raswsdf
 - [x] 1-1: 난이도/최대턴수/rubric (백엔드) @cl-o-lc
 - [x] 1-2: 전공계열별 페르소나 (백엔드) @cl-o-lc
 - [x] 1-3: 난이도/계열 프론트 연동 @cl-o-lc
