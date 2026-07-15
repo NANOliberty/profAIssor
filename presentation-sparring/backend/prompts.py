@@ -8,6 +8,12 @@ def _format_slides(slides: List[Slide]) -> str:
     return "\n".join(f"[슬라이드 {slide.index}] {slide.text}" for slide in slides)
 
 
+def _format_script(script: str) -> str:
+    if not script.strip():
+        return "(대본이 제공되지 않았습니다. 슬라이드 내용을 근거로 판단하세요.)"
+    return script
+
+
 _DIFFICULTY_HINTS = {
     "easy": (
         "쉬움: 자료에 직접 나온 용어, 목적 또는 핵심 내용을 확인하세요. "
@@ -56,7 +62,7 @@ def build_question_prompt(
     )
 
     user = (
-        f"[발표 대본]\n{script}\n\n"
+        f"[발표 대본]\n{_format_script(script)}\n\n"
         f"[슬라이드]\n{_format_slides(slides)}\n\n"
         "선택한 persona와 난이도에 맞는 질문 하나를 만드세요."
     )
@@ -115,7 +121,7 @@ def build_evaluate_prompt(
     )
 
     script_reference = (
-        f"[발표 대본 일부]\n{script[:1000]}\n\n"
+        f"[발표 대본 일부]\n{_format_script(script)[:1000]}\n\n"
         if turn == 0
         else ""
     )
@@ -160,7 +166,7 @@ def build_report_prompt(
     ) or "(질의응답 기록 없음)"
 
     user = (
-        f"[발표 대본]\n{script}\n\n"
+        f"[발표 대본]\n{_format_script(script)}\n\n"
         f"[슬라이드]\n{_format_slides(slides)}\n\n"
         f"[질의응답]\n{transcript_text}\n\n"
         "모든 슬라이드를 index 순서대로 포함해 평가하세요."
