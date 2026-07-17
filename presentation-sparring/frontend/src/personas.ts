@@ -2,6 +2,12 @@ import type { Persona } from './types'
 
 export const PERSONAS: Persona[] = [
   {
+    id: 'standard',
+    name: '기본 발표 평가자',
+    emoji: '💡',
+    blurb: '발표 목적과 핵심 메시지를 확인하는 기본 질문으로 질의응답을 먼저 연습합니다.',
+  },
+  {
     id: 'professor',
     name: '까다로운 교수',
     emoji: '🎓',

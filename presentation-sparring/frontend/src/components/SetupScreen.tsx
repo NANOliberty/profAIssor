@@ -41,7 +41,8 @@ const SAMPLE_SLIDES: Slide[] = [
 export default function SetupScreen({ onStart }: Props) {
   const [script, setScript] = useState('')
   const [slides, setSlides] = useState<Slide[]>([])
-  const [selected, setSelected] = useState<PersonaId[]>(['professor', 'peer'])
+  // 첫 연습은 중립적인 기본 평가자 한 명으로 수정
+  const [selected, setSelected] = useState<PersonaId[]>(['standard'])
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [maxTurns, setMaxTurns] = useState(2)
   const [field, setField] = useState<AcademicField | null>(null)

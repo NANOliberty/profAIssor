@@ -1,4 +1,4 @@
-export type PersonaId = 'professor' | 'peer' | 'layperson'
+export type PersonaId = 'standard' | 'professor' | 'peer' | 'layperson'
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type AcademicField = 'engineering' | 'humanities' | 'natural'
