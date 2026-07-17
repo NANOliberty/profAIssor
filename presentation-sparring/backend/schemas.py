@@ -1,9 +1,23 @@
 """Pydantic request/response models for the sparring API."""
+
 from typing import Dict, List, Literal, Optional
+
 from pydantic import BaseModel, Field
+
 
 Difficulty = Literal["easy", "medium", "hard"]
 AcademicField = Literal["engineering", "humanities", "natural"]
+
+# 질문 생성과 꼬리질문 흐름에서 사용하는 네 가지 공통 질문 유형
+QuestionType = Literal[
+    "evidence",
+    "counterexample",
+    "application",
+    "definition",
+]
+
+# 일반 답변과 답변 불가 상태를 구분해 프론트 표시 방식을 분리
+AnswerStatus = Literal["answered", "unknown"]
 
 
 class Slide(BaseModel):
@@ -12,11 +26,15 @@ class Slide(BaseModel):
 
 
 # --- /api/slides/extract ---
+
+
 class SlideExtractResponse(BaseModel):
     slides: List[Slide]
 
 
 # --- /api/questions ---
+
+
 class QuestionRequest(BaseModel):
     script: str
     slides: List[Slide] = Field(default_factory=list)
@@ -24,29 +42,56 @@ class QuestionRequest(BaseModel):
     difficulty: Difficulty = "medium"
     field: Optional[AcademicField] = None
 
+    # 답변 불가 뒤 새 질문을 만들 때 이전 질문의 반복을 방지
+    excluded_questions: List[str] = Field(default_factory=list)
+
 
 class QuestionResponse(BaseModel):
     question: str
+    question_type: QuestionType
     targets_slide: Optional[int] = None
+
+    # 질문 문자열만으로는 꼬리질문이 원래 의도를 잃기 쉬우므로,
+    # 최초 질문을 만들 때 사용한 내부 평가 맥락도 함께 반환
+    question_focus: str = ""
+    context_slides: List[int] = Field(default_factory=list)
+    expected_answer_points: List[str] = Field(default_factory=list)
 
 
 # --- /api/evaluate ---
+
+
 class EvaluateRequest(BaseModel):
     script: str
+    slides: List[Slide] = Field(default_factory=list)
     persona_id: str
     question: str
-    # 현재 persona의 최초 질문. 꼬리질문이 처음 쟁점에서 벗어나지 않도록 유지
+
+    # 현재 persona의 최초 질문과 최초 질문 유형
+    # 꼬리질문이 같은 핵심 주제를 유지하는 기준점으로 사용
     root_question: Optional[str] = None
+    root_question_type: Optional[QuestionType] = None
+
+    # 현재 화면에 표시된 질문의 유형
+    # 꼬리질문에서 유형이 한 번 전환되면 다음 평가에는 전환된 유형이 들어옴
+    question_type: Optional[QuestionType] = None
+
+    # 최초 질문 생성 시 LLM이 정한 내부 평가 맥락
+    question_focus: str = ""
+    context_slides: List[int] = Field(default_factory=list)
+    expected_answer_points: List[str] = Field(default_factory=list)
+
     answer: str
     turn: int = 0
+
     # 최초 질문 이후 허용되는 최대 꼬리질문 횟수
-    # 기본값은 2회이며, 사용자는 0~3회 범위 내 선택
     max_turns: int = Field(default=2, ge=0, le=3)
+
     # 최초 질문에서 선택한 난이도를 평가와 꼬리질문에도 유지
     difficulty: Difficulty = "medium"
     field: Optional[AcademicField] = None
-    # Presentation-specific terms (from the frontend's script/slide dictionary)
-    # so the evaluator can look past likely STT mishearings in `answer`.
+
+    # STT 오인식 보정에 사용할 발표 관련 용어
     term_hints: List[str] = Field(default_factory=list)
 
 
@@ -55,16 +100,38 @@ class EvaluateResponse(BaseModel):
     strengths: str
     gaps: str
     followup: Optional[str] = None
+
+    # 꼬리질문이 생성된 경우 그 질문의 유형을 명시
+    # 프론트엔드는 이 값을 다음 평가 요청의 question_type으로 사용
+    followup_question_type: Optional[QuestionType] = None
+
+    # 답변 불가 상태에서는 일반 rubric 대신 핵심 보충과 관련 슬라이드를 표시
+    answer_status: AnswerStatus = "answered"
+    supplement: Optional[str] = None
+    related_slides: List[int] = Field(default_factory=list)
+
     rubric: Dict[str, str] = Field(default_factory=dict)
 
 
 # --- /api/report ---
+
+
 class TranscriptTurn(BaseModel):
     persona_id: str
     question: str
+
+    # 이후 리포트에서 유형별 대응 약점을 분석할 수 있도록 보관
+    # 기존 저장 데이터 호환을 위해 선택 필드로 둠
+    question_type: Optional[QuestionType] = None
+
     answer: str
     verdict: str = ""
     gaps: str = ""
+
+    # 종합 리포트에서도 답변 불가와 보충 내용을 구분할 수 있게 보관
+    answer_status: AnswerStatus = "answered"
+    supplement: Optional[str] = None
+    related_slides: List[int] = Field(default_factory=list)
 
 
 class ReportRequest(BaseModel):

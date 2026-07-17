@@ -16,12 +16,18 @@ logger = logging.getLogger(__name__)
 import llm_client
 import ppt_extract
 import prompts
-from personas import get_field_hint, get_model_hint, get_persona
+from personas import (
+    get_field_hint,
+    get_model_hint,
+    get_persona,
+    get_question_type_priority,
+)
 from schemas import (
     EvaluateRequest,
     EvaluateResponse,
     QuestionRequest,
     QuestionResponse,
+    QuestionType,
     ReportRequest,
     ReportResponse,
     Slide,
@@ -86,24 +92,179 @@ async def extract_slides_endpoint(file: UploadFile = File(...)):
     return SlideExtractResponse(slides=slides)
 
 
+_QUESTION_TYPE_ALIASES: Dict[str, QuestionType] = {
+    "evidence": "evidence",
+    "근거 요구형": "evidence",
+    "근거": "evidence",
+    "counterexample": "counterexample",
+    "반례 제시형": "counterexample",
+    "반례": "counterexample",
+    "application": "application",
+    "확장 적용형": "application",
+    "확장": "application",
+    "definition": "definition",
+    "정의 확인형": "definition",
+    "정의": "definition",
+}
+
+
+def _parse_question_type(raw, fallback: str) -> QuestionType:
+    """LLM이 반환한 질문 유형을 네 가지 내부 ID 중 하나로 정규화합니다."""
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        parsed = _QUESTION_TYPE_ALIASES.get(normalized)
+
+        if parsed:
+            return parsed
+
+    fallback_parsed = _QUESTION_TYPE_ALIASES.get(fallback)
+
+    if fallback_parsed:
+        return fallback_parsed
+
+    return "definition"
+
+
+def _parse_int_list(raw, *, valid_values: set[int], limit: int = 3) -> List[int]:
+    """LLM 배열 응답에서 유효한 슬라이드 번호만 순서대로 남깁니다."""
+    if not isinstance(raw, list):
+        return []
+
+    result: List[int] = []
+
+    for item in raw:
+        if isinstance(item, str) and item.strip().isdigit():
+            item = int(item.strip())
+
+        if not isinstance(item, int) or item not in valid_values or item in result:
+            continue
+
+        result.append(item)
+
+        if len(result) >= limit:
+            break
+
+    return sorted(result)
+
+
+def _parse_string_list(raw, *, limit: int = 3) -> List[str]:
+    """LLM 배열 응답에서 비어 있지 않은 문자열만 제한 개수만큼 남깁니다."""
+    if not isinstance(raw, list):
+        return []
+
+    result: List[str] = []
+
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+
+        normalized = item.strip()
+        if not normalized or normalized in result:
+            continue
+
+        result.append(normalized[:240])
+
+        if len(result) >= limit:
+            break
+
+    return result
+
+
+_TYPE_TRANSITIONS: Dict[QuestionType, QuestionType] = {
+    "definition": "application",
+    "evidence": "counterexample",
+    "application": "definition",
+    "counterexample": "evidence",
+}
+
+
+def _allowed_followup_types(
+    current_type: QuestionType,
+    difficulty: str,
+    turn: int,
+) -> set[QuestionType]:
+    """프롬프트가 허용 범위를 벗어난 유형을 반환해도 API에서 한 번 더 제한합니다."""
+    allowed = {current_type}
+
+    # 유형 전환은 첫 번째 꼬리질문에서만 허용합니다.
+    if turn > 0:
+        return allowed
+
+    if difficulty == "easy":
+        if current_type == "definition":
+            allowed.add("application")
+        return allowed
+
+    allowed.add(_TYPE_TRANSITIONS[current_type])
+    return allowed
+
+
 @app.post("/api/questions", response_model=QuestionResponse)
 def questions(req: QuestionRequest):
     persona = get_persona(req.persona_id)
     persona_system = persona["system"] + get_field_hint(req.field)
+    question_type_priority = get_question_type_priority(req.persona_id)
+
     system, user = prompts.build_question_prompt(
-        persona_system, req.script, req.slides, req.difficulty
+        persona_system=persona_system,
+        script=req.script,
+        slides=req.slides,
+        difficulty=req.difficulty,
+        question_type_priority=question_type_priority,
+        excluded_questions=req.excluded_questions,
     )
+
     try:
-        data = llm_client.chat_json(system, user, get_model_hint(req.persona_id))
+        data = llm_client.chat_json(
+            system,
+            user,
+            get_model_hint(req.persona_id),
+        )
     except Exception:  # noqa: BLE001
         logger.exception("LLM call failed in /api/questions")
-        raise HTTPException(status_code=502, detail="AI 질문 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+        raise HTTPException(
+            status_code=502,
+            detail="AI 질문 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
+        )
+
+    valid_slide_indices = {slide.index for slide in req.slides}
     targets = data.get("targets_slide")
+
     if isinstance(targets, str) and targets.strip().isdigit():
         targets = int(targets)
-    if not isinstance(targets, int):
+
+    if not isinstance(targets, int) or targets not in valid_slide_indices:
         targets = None
-    return QuestionResponse(question=str(data.get("question", "")).strip(), targets_slide=targets)
+
+    # LLM 응답이 잘못되거나 누락되면 persona의 첫 번째 우선 유형을 사용합니다.
+    question_type = _parse_question_type(
+        data.get("question_type"),
+        question_type_priority[0],
+    )
+
+    context_slides = _parse_int_list(
+        data.get("context_slides"),
+        valid_values=valid_slide_indices,
+    )
+
+    if targets is not None and targets not in context_slides:
+        context_slides = sorted([targets, *context_slides])[:3]
+
+    expected_answer_points = _parse_string_list(
+        data.get("expected_answer_points"),
+    )
+
+    question = str(data.get("question", "")).strip()
+    question_focus = str(data.get("question_focus", "")).strip()
+
+    return QuestionResponse(
+        question=question,
+        question_type=question_type,
+        targets_slide=targets,
+        question_focus=question_focus or question[:160],
+        context_slides=context_slides,
+        expected_answer_points=expected_answer_points,
+    )
 
 
 _RUBRIC_AXES = ("직접성", "근거", "논리")
@@ -120,13 +281,62 @@ def _parse_rubric(raw) -> Dict[str, str]:
     }
 
 
+_NO_ANSWER_PATTERN = re.compile(
+    r"^(?:(?:잘|정확히|아직)\s*)?"
+    r"(?:모르겠습니다|모르겠어요|모르겠네요|모릅니다|모르겠다|"
+    r"기억(?:이\s*)?나지\s*않습니다|생각(?:이\s*)?나지\s*않습니다|"
+    r"답변하기\s*어렵습니다|확인해\s*봐야\s*합니다|검색해\s*봐야\s*합니다)"
+    r"(?:[\s,.!?…]*(?:먼저\s*)?(?:알려|설명해)\s*주(?:시)?겠습니까|"
+    r"[\s,.!?…]*(?:알려|설명해)\s*주세요)?[\s.!?…]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_no_answer(answer: str) -> bool:
+    """명시적인 답변 불가 표현만 보수적으로 감지합니다."""
+    normalized = re.sub(r"\s+", " ", answer.strip())
+    if not normalized or len(normalized) > 100:
+        return False
+
+    compact = re.sub(r"[\s,.!?…]", "", normalized.lower())
+    if compact in {
+        "모름",
+        "잘모름",
+        "모르겠습니다",
+        "잘모르겠습니다",
+        "모르겠어요",
+        "잘모르겠어요",
+        "모릅니다",
+        "idontknow",
+    }:
+        return True
+
+    return bool(_NO_ANSWER_PATTERN.fullmatch(normalized))
+
+
+def _fallback_supplement(expected_points: List[str]) -> str:
+    """LLM 보충 문장이 비어 있을 때 내부 기대 요소로 짧은 힌트를 만듭니다."""
+    points = [point.strip() for point in expected_points if point.strip()][:2]
+    if points:
+        return (
+            "핵심 확인 항목은 "
+            + ", ".join(points)
+            + "입니다. 발표 자료에서 각 항목의 의미와 연결 관계를 다시 정리해 보세요."
+        )
+
+    return "질문의 핵심 개념과 비교 기준을 발표 자료에서 다시 확인해 보세요."
+
+
 @app.post("/api/evaluate", response_model=EvaluateResponse)
 def evaluate(req: EvaluateRequest):
     persona = get_persona(req.persona_id)
     persona_system = persona["system"] + get_field_hint(req.field)
+    no_answer = _is_no_answer(req.answer)
+
     system, user = prompts.build_evaluate_prompt(
         persona_system=persona_system,
         script=req.script,
+        slides=req.slides,
         question=req.question,
         answer=req.answer,
         turn=req.turn,
@@ -134,23 +344,93 @@ def evaluate(req: EvaluateRequest):
         term_hints=req.term_hints,
         difficulty=req.difficulty,
         root_question=req.root_question,
+        root_question_type=req.root_question_type,
+        question_type=req.question_type,
+        question_focus=req.question_focus,
+        context_slides=req.context_slides,
+        expected_answer_points=req.expected_answer_points,
+        is_no_answer=no_answer,
     )
     try:
         data = llm_client.chat_json(system, user, get_model_hint(req.persona_id))
     except Exception:  # noqa: BLE001
         logger.exception("LLM call failed in /api/evaluate")
         raise HTTPException(status_code=502, detail="AI 평가 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+
+    # LLM도 답변 불가로 판단한 경우를 보조적으로 수용하되,
+    # 명시적 표현은 서버 판정을 최종 기준으로 사용합니다.
+    model_status = str(data.get("answer_status", "")).strip().lower()
+    is_unknown = no_answer or model_status == "unknown"
+
+    valid_slide_indices = {slide.index for slide in req.slides}
+    preferred_slide_indices = {
+        index for index in req.context_slides if index in valid_slide_indices
+    }
+    related_valid_values = preferred_slide_indices or valid_slide_indices
+    related_slides = _parse_int_list(
+        data.get("related_slides"),
+        valid_values=related_valid_values,
+    )
+
+    supplement_raw = data.get("supplement")
+    supplement = supplement_raw.strip() if isinstance(supplement_raw, str) else None
+    if supplement and supplement.lower() in ("null", "none"):
+        supplement = None
+
+    if is_unknown:
+        # 답변 불가에서는 채점과 꼬리질문을 생략하고 다음 준비를 위한 힌트만 반환합니다.
+        if not related_slides and preferred_slide_indices:
+            related_slides = sorted(preferred_slide_indices)[:2]
+
+        return EvaluateResponse(
+            answer_status="unknown",
+            verdict="확인 필요",
+            strengths="",
+            gaps="질문의 핵심 내용을 발표 전에 다시 확인해 보세요.",
+            supplement=supplement or _fallback_supplement(req.expected_answer_points),
+            related_slides=related_slides,
+            followup=None,
+            followup_question_type=None,
+            rubric={},
+        )
+
     followup = data.get("followup")
     if isinstance(followup, str) and followup.strip().lower() in ("null", "none", ""):
         followup = None
+
+    current_type = req.question_type or req.root_question_type or "definition"
+    allowed_types = _allowed_followup_types(
+        current_type=current_type,
+        difficulty=req.difficulty,
+        turn=req.turn,
+    )
+
+    followup_question_type = None
+    if isinstance(followup, str):
+        parsed_followup_type = _parse_question_type(
+            data.get("followup_question_type"),
+            current_type,
+        )
+        followup_question_type = (
+            parsed_followup_type
+            if parsed_followup_type in allowed_types
+            else current_type
+        )
+
     # Hard guard: never allow a followup once turn >= max_turns.
     if req.turn >= req.max_turns:
         followup = None
+        followup_question_type = None
+
     return EvaluateResponse(
+        answer_status="answered",
         verdict=str(data.get("verdict", "")).strip(),
         strengths=str(data.get("strengths", "")).strip(),
         gaps=str(data.get("gaps", "")).strip(),
+        supplement=None,
+        related_slides=[],
         followup=followup.strip() if isinstance(followup, str) else None,
+        followup_question_type=followup_question_type,
         rubric=_parse_rubric(data.get("rubric")),
     )
 

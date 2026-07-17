@@ -192,51 +192,156 @@ def _shorten(text: str, limit: int = 45) -> str:
     return normalized[:limit].rstrip() + "…"
 
 
-def _mock_question(user: str) -> dict:
-    """첫 슬라이드의 번호와 내용을 포함한 mock 최초 질문을 생성"""
-    slide_match = re.search(r"\[슬라이드\s+(\d+)\]\s*(.+)", user)
-    if slide_match:
-        slide_index = int(slide_match.group(1))
-        slide_claim = _shorten(slide_match.group(2), limit=60)
-        return {
-            "question": (
-                f"{slide_index}번 슬라이드에서 '{slide_claim}'라고 제시했는데, "
-                "이 결론이 도출된 구체적인 조건과 핵심 근거는 무엇인가요?"
-            ),
-            "targets_slide": slide_index,
-        }
+_MOCK_QUESTION_TYPES = {
+    "evidence",
+    "counterexample",
+    "application",
+    "definition",
+}
+
+
+def _mock_question_type(system: str) -> str:
+    """프롬프트의 persona 우선순위에서 mock 질문 유형을 결정"""
+    priority_match = re.search(
+        r"\[질문 유형 우선순위\]\s*\n([^\n]+)",
+        system,
+    )
+
+    if priority_match:
+        candidates = [
+            item.strip()
+            for item in priority_match.group(1).split(">")
+        ]
+
+        for candidate in candidates:
+            if candidate in _MOCK_QUESTION_TYPES:
+                # 쉬움에서는 명시적인 예외 자료를 판정하기 어려우므로
+                # mock 반례 질문 대신 확장 적용형으로 낮춤
+                if (
+                    candidate == "counterexample"
+                    and "[난이도: 쉬움]" in system
+                ):
+                    return "application"
+
+                return candidate
+
+    return "definition"
+
+
+def _mock_question(system: str, user: str) -> dict:
+    """persona 우선순위와 전체 슬라이드 흐름을 반영한 mock 질문을 생성"""
+    question_type = _mock_question_type(system)
+
+    slide_matches = re.findall(
+        r"\[슬라이드\s+(\d+)\]\s*(.*?)(?=\n\[슬라이드\s+\d+\]|\n\n\[제외할 이전 질문\]|\Z)",
+        user,
+        re.DOTALL,
+    )
+
+    excluded_section = _extract_section(user, "제외할 이전 질문")
+    excluded_count = len(
+        [line for line in excluded_section.splitlines() if line.strip().startswith("-")]
+    )
+
+    if slide_matches:
+        offset = excluded_count % len(slide_matches)
+        slide_matches = slide_matches[offset:] + slide_matches[:offset]
+
+    context_slides = [
+        int(index)
+        for index, _ in slide_matches[:3]
+    ]
+
+    if slide_matches:
+        representative_index = int(slide_matches[0][0])
+        first_text = _shorten(slide_matches[0][1], limit=55)
+        second_text = (
+            _shorten(slide_matches[1][1], limit=45)
+            if len(slide_matches) > 1
+            else f"아직 묻지 않은 핵심 요소 {excluded_count + 1}"
+        )
+        subject = f"{first_text}와 {second_text}의 연결"
+    else:
+        representative_index = None
+        subject = "발표의 핵심 내용과 전체 흐름"
+
+    templates = {
+        "definition": (
+            f"자료 전체 흐름을 기준으로 {subject}에서 가장 중요한 개념 차이를 "
+            "설명해 주실 수 있나요?"
+        ),
+        "evidence": (
+            f"자료 전체 흐름에서 {subject}을 뒷받침하는 가장 직접적인 근거 하나는 무엇인가요?"
+        ),
+        "counterexample": (
+            f"자료에 제시된 조건을 기준으로 {subject}이 성립하지 않을 수 있는 "
+            "예외 한 가지는 무엇인가요?"
+        ),
+        "application": (
+            f"자료에서 설명한 {subject}을 관련 예시에 적용하면 어떻게 판단할 수 있나요?"
+        ),
+    }
 
     return {
-        "question": (
-            "발표에서 제시한 핵심 주장이 어떤 조건과 근거에서 도출됐는지 "
-            "구체적으로 설명해 주실 수 있나요?"
-        ),
-        "targets_slide": None,
+        "question": templates[question_type],
+        "question_type": question_type,
+        "targets_slide": representative_index,
+        "question_focus": subject,
+        "context_slides": context_slides,
+        "expected_answer_points": [
+            first_text if slide_matches else "발표의 핵심 내용",
+            second_text if slide_matches else "핵심 내용 사이의 관계",
+        ],
     }
 
 
-def _mock_followup(user: str) -> Optional[str]:
-    """turn 0~2에서 학생 답변 표현을 포함한 mock 꼬리질문을 반환"""
-    turn_match = re.search(r"현재 턴:\s*(\d+)", user)
+def _mock_followup(user: str) -> tuple[Optional[str], Optional[str]]:
+    """중복을 피하고 첫 꼬리질문에서만 인접 유형으로 전환"""
+    turn_match = re.search(r"turn=(\d+)", user)
     turn = int(turn_match.group(1)) if turn_match else 0
-    answer_excerpt = _shorten(_extract_section(user, "학생의 직전 답변"))
 
-    if turn == 0:
+    if turn >= 3:
+        return None, None
+
+    question_type = _extract_section(user, "현재 질문 유형")
+    if not question_type:
+        question_type = _extract_section(user, "질문 유형")
+
+    answer_excerpt = _shorten(
+        _extract_section(user, "학생 답변"),
+    )
+    focus = _shorten(
+        _extract_section(user, "질문 초점"),
+        limit=55,
+    )
+
+    if turn == 0 and question_type == "definition":
         return (
-            f"방금 '{answer_excerpt}'라고 답했는데, 그 판단을 뒷받침하는 "
-            "구체적인 측정 기준이나 확인 과정은 무엇인가요?"
+            f"{focus}과 관련된 자료 속 예시 하나를 골라 방금 설명한 기준을 "
+            "어떻게 적용하는지 말씀해 주실 수 있나요?",
+            "application",
         )
-    if turn == 1:
-        return (
-            f"방금 '{answer_excerpt}'라고 설명했는데, 그 과정이 성립하기 위해 "
-            "반드시 필요한 전제 조건은 무엇인가요?"
-        )
-    if turn == 2:
-        return (
-            f"방금 '{answer_excerpt}'라고 했는데, 그 전제 조건이 깨지는 예외 상황에서도 "
-            "같은 결과 해석이 유지된다고 볼 수 있나요?"
-        )
-    return None
+
+    templates = {
+        "definition": (
+            f"방금 '{answer_excerpt}'라고 설명했는데, {focus}을 구분하는 핵심 기준 하나를 "
+            "더 명확히 말씀해 주실 수 있나요?"
+        ),
+        "evidence": (
+            f"방금 '{answer_excerpt}'라고 답했는데, 그 근거가 {focus}을 뒷받침한다고 "
+            "볼 수 있는 이유는 무엇인가요?"
+        ),
+        "counterexample": (
+            f"방금 '{answer_excerpt}'라고 설명했는데, 그 예외 조건에서 {focus}은 "
+            "어떻게 달라지나요?"
+        ),
+        "application": (
+            f"방금 '{answer_excerpt}'라고 답했는데, 같은 기준을 자료의 다른 예시에 "
+            "적용하면 어떻게 판단할 수 있나요?"
+        ),
+    }
+
+    return templates.get(question_type, templates["definition"]), question_type or "definition"
 
 
 def _call_mock(system: str, user: str, model: str) -> str:
@@ -244,15 +349,46 @@ def _call_mock(system: str, user: str, model: str) -> str:
     _ = model
 
     if '"targets_slide"' in system:
-        return json.dumps(_mock_question(user), ensure_ascii=False)
+        return json.dumps(_mock_question(system, user), ensure_ascii=False)
 
     if '"verdict"' in system and '"followup"' in system:
+        answer_status = _extract_section(user, "답변 상태 사전 판정")
+
+        if answer_status == "unknown":
+            slide_section = _extract_section(user, "질문 관련 슬라이드")
+            related_slides = [
+                int(index)
+                for index in re.findall(r"\[슬라이드\s+(\d+)\]", slide_section)[:2]
+            ]
+            return json.dumps(
+                {
+                    "answer_status": "unknown",
+                    "verdict": "확인 필요",
+                    "strengths": "",
+                    "gaps": "질문의 핵심 내용을 발표 전에 다시 확인해 보세요.",
+                    "supplement": (
+                        "질문과 관련된 핵심 개념과 비교 기준을 자료에서 다시 확인해 보세요. "
+                        "정의만 외우기보다 두 개념의 목적과 적용 대상을 구분해 정리하는 것이 좋습니다."
+                    ),
+                    "related_slides": related_slides,
+                    "followup": None,
+                    "followup_question_type": None,
+                    "rubric": {},
+                },
+                ensure_ascii=False,
+            )
+
+        followup, followup_question_type = _mock_followup(user)
         return json.dumps(
             {
-                "verdict": "질문의 방향에는 답했지만 근거와 과정 설명이 더 필요합니다.",
-                "strengths": "핵심 개념을 이해하고 답변의 중심을 유지했습니다.",
-                "gaps": "판단 기준, 전제 조건, 결과 해석을 뒷받침하는 설명이 부족합니다.",
-                "followup": _mock_followup(user),
+                "answer_status": "answered",
+                "verdict": "질문의 핵심에는 답했지만 자료 흐름과의 연결을 조금 더 설명할 수 있습니다.",
+                "strengths": "질문에서 요구한 중심 개념을 벗어나지 않고 답했습니다.",
+                "gaps": "관련 슬라이드의 기준이나 예시를 사용한 설명이 아직 충분하지 않습니다.",
+                "supplement": None,
+                "related_slides": [],
+                "followup": followup,
+                "followup_question_type": followup_question_type,
                 "rubric": {
                     "직접성": "보통",
                     "근거": "부족",
