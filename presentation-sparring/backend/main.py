@@ -328,11 +328,91 @@ def _fallback_supplement(expected_points: List[str]) -> str:
     return "질문의 핵심 개념과 비교 기준을 발표 자료에서 다시 확인해 보세요."
 
 
+def _fallback_unknown_retry(question_focus: str) -> str:
+    """LLM 재질문이 비어 있을 때 같은 주제를 더 쉽게 묻는 문장 생성."""
+    focus = re.sub(r"\s+", " ", question_focus.strip())[:120]
+
+    if focus:
+        return (
+            f"힌트를 바탕으로, {focus}에서 가장 기본이 되는 의미나 관계 한 가지만 "
+            "말씀해 주실 수 있나요?"
+        )
+
+    return (
+        "힌트를 바탕으로, 원래 질문과 관련된 가장 기본적인 내용 한 가지만 "
+        "말씀해 주실 수 있나요?"
+    )
+
+
+def _fallback_required_followup(
+    question_focus: str,
+    current_type: QuestionType,
+    difficulty: str,
+    turn: int,
+) -> tuple[str, QuestionType]:
+    """남은 정상 꼬리질문 횟수 보장을 위한 대체 질문 생성."""
+    focus = re.sub(r"\s+", " ", question_focus.strip())[:120]
+    subject = focus or "원래 질문의 핵심 내용"
+
+    # 첫 정상 꼬리질문의 인접 유형 전환
+    next_type = current_type
+    if turn == 0:
+        if difficulty == "easy":
+            if current_type == "definition":
+                next_type = "application"
+        else:
+            next_type = _TYPE_TRANSITIONS[current_type]
+
+    templates: Dict[QuestionType, str] = {
+        "definition": (
+            f"{subject}을 판단할 때 가장 중요한 의미나 구분 기준 한 가지는 무엇인가요?"
+        ),
+        "evidence": (
+            f"{subject}에 관한 방금 답변을 뒷받침하는 자료 속 근거 한 가지는 무엇인가요?"
+        ),
+        "counterexample": (
+            f"{subject}에 관한 설명이 그대로 성립하지 않을 수 있는 자료 속 조건 한 가지는 무엇인가요?"
+        ),
+        "application": (
+            f"{subject}에 관한 방금 설명을 자료 속 다른 예시에 적용하면 어떻게 판단할 수 있나요?"
+        ),
+    }
+
+    return templates[next_type], next_type
+
+
 @app.post("/api/evaluate", response_model=EvaluateResponse)
 def evaluate(req: EvaluateRequest):
+    no_answer = _is_no_answer(req.answer)
+    current_type = req.question_type or req.root_question_type or "definition"
+
+    # 쉬운 재질문의 명시적 답변 불가에 대한 LLM 호출 생략
+    if req.is_unknown_retry and no_answer:
+        followup = None
+        followup_question_type = None
+
+        if req.turn < req.max_turns:
+            followup, followup_question_type = _fallback_required_followup(
+                question_focus=req.question_focus,
+                current_type=current_type,
+                difficulty=req.difficulty,
+                turn=req.turn,
+            )
+
+        return EvaluateResponse(
+            answer_status="unknown",
+            verdict="확인 필요",
+            strengths="",
+            gaps="쉬운 재질문에도 답변하지 못해 이 질문은 여기까지 진행합니다.",
+            supplement=None,
+            related_slides=[],
+            followup=followup,
+            followup_question_type=followup_question_type,
+            rubric={},
+        )
+
     persona = get_persona(req.persona_id)
     persona_system = persona["system"] + get_field_hint(req.field)
-    no_answer = _is_no_answer(req.answer)
 
     system, user = prompts.build_evaluate_prompt(
         persona_system=persona_system,
@@ -379,19 +459,61 @@ def evaluate(req: EvaluateRequest):
         supplement = None
 
     if is_unknown:
-        # 답변 불가에서는 채점과 꼬리질문을 생략하고 다음 준비를 위한 힌트만 반환합니다.
+        # 쉬운 재질문에서 재차 감지된 답변 불가의 반복 차단
+        if req.is_unknown_retry:
+            followup = None
+            followup_question_type = None
+
+            if req.turn < req.max_turns:
+                followup, followup_question_type = _fallback_required_followup(
+                    question_focus=req.question_focus,
+                    current_type=current_type,
+                    difficulty=req.difficulty,
+                    turn=req.turn,
+                )
+
+            return EvaluateResponse(
+                answer_status="unknown",
+                verdict="확인 필요",
+                strengths="",
+                gaps="쉬운 재질문에도 답변하지 못해 이 질문은 여기까지 진행합니다.",
+                supplement=None,
+                related_slides=[],
+                followup=followup,
+                followup_question_type=followup_question_type,
+                rubric={},
+            )
+
+        # 최초 답변 불가의 힌트 및 쉬운 재질문 반환
         if not related_slides and preferred_slide_indices:
             related_slides = sorted(preferred_slide_indices)[:2]
+
+        model_gaps = str(data.get("gaps", "")).strip()
+        retry_question = data.get("followup")
+        if (
+            isinstance(retry_question, str)
+            and retry_question.strip().lower() in ("null", "none", "")
+        ):
+            retry_question = None
+
+        # 모델 누락 시 동일 주제의 쉬운 재질문 보장
+        if not isinstance(retry_question, str):
+            retry_question = _fallback_unknown_retry(req.question_focus)
+
+        retry_question_type = _parse_question_type(
+            data.get("followup_question_type"),
+            "definition",
+        )
 
         return EvaluateResponse(
             answer_status="unknown",
             verdict="확인 필요",
             strengths="",
-            gaps="질문의 핵심 내용을 발표 전에 다시 확인해 보세요.",
+            gaps=model_gaps or "질문의 핵심 내용을 발표 전에 다시 확인해 보세요.",
             supplement=supplement or _fallback_supplement(req.expected_answer_points),
             related_slides=related_slides,
-            followup=None,
-            followup_question_type=None,
+            followup=retry_question.strip(),
+            followup_question_type=retry_question_type,
             rubric={},
         )
 
@@ -399,7 +521,6 @@ def evaluate(req: EvaluateRequest):
     if isinstance(followup, str) and followup.strip().lower() in ("null", "none", ""):
         followup = None
 
-    current_type = req.question_type or req.root_question_type or "definition"
     allowed_types = _allowed_followup_types(
         current_type=current_type,
         difficulty=req.difficulty,
@@ -418,7 +539,20 @@ def evaluate(req: EvaluateRequest):
             else current_type
         )
 
-    # Hard guard: never allow a followup once turn >= max_turns.
+    # 모델 누락에 대한 정상 꼬리질문 횟수 보장
+    if req.turn < req.max_turns and not isinstance(followup, str):
+        fallback_followup, fallback_type = _fallback_required_followup(
+            question_focus=req.question_focus,
+            current_type=current_type,
+            difficulty=req.difficulty,
+            turn=req.turn,
+        )
+        followup = fallback_followup
+        followup_question_type = (
+            fallback_type if fallback_type in allowed_types else current_type
+        )
+
+    # 선택한 정상 꼬리질문 횟수 완료 후 종료
     if req.turn >= req.max_turns:
         followup = None
         followup_question_type = None

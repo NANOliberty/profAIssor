@@ -36,13 +36,11 @@ export default function SparScreen({
 }: Props) {
   const [personaIndex, setPersonaIndex] = useState(0)
 
-  // turn은 "현재 root 질문 안에서 진행된 꼬리질문 횟수"만 뜻하며,
-  // 새 root 질문이 시작되면 항상 0으로 리셋된다.
+  // 현재 평가자에서 표시된 추가 질문 횟수 관리
   const [turn, setTurn] = useState(0)
 
-  // 답변 불가로 소진된 질문 교체 횟수. persona별 공유 예산(maxTurns)에서
-  // 차감되며, turn과 분리해 새 질문의 유형 전환(turn=0 규칙)이 막히지 않게 한다.
-  const [skipsUsed, setSkipsUsed] = useState(0)
+  // 현재 화면 질문의 답변 불가 뒤 쉬운 재질문 여부 관리
+  const [isUnknownRetryQuestion, setIsUnknownRetryQuestion] = useState(false)
 
   const [question, setQuestion] = useState<string | null>(null)
   const [rootQuestion, setRootQuestion] = useState<string | null>(null)
@@ -98,6 +96,14 @@ export default function SparScreen({
   const activePersonaId = personaIds[personaIndex]
   const persona = getPersona(activePersonaId)
 
+  // 기본 질문을 포함한 현재 평가자의 전체 정상 질문 수 계산
+  const totalQuestionCount = maxTurns + 1
+
+  // 정상 질문에서는 현재 질문을 포함하고, 쉬운 재질문에서는 남은 정상 질문만 계산
+  const remainingQuestionCount = isUnknownRetryQuestion
+    ? Math.max(0, maxTurns - turn)
+    : Math.max(0, totalQuestionCount - turn)
+
   const pushMessage = (message: ChatMessage) => {
     setMessages((previous) => [...previous, message])
   }
@@ -124,6 +130,7 @@ export default function SparScreen({
         response.question,
       ]
 
+      setIsUnknownRetryQuestion(false)
       setQuestion(response.question)
       setRootQuestion(response.question)
       setRootQuestionType(response.question_type)
@@ -173,14 +180,11 @@ export default function SparScreen({
     const currentQuestion = question
     const firstQuestion = rootQuestion ?? currentQuestion
 
-    // 질문 유형 이전 상태 호환 처리
+    // 질문 유형 및 진행 상태의 이전 데이터 호환 처리
     const firstQuestionType = rootQuestionType ?? questionType ?? 'definition'
     const currentQuestionType = questionType ?? firstQuestionType
     const currentTurn = turn
-    const currentSkips = skipsUsed
-
-    // 답변 불가로 이미 소진된 횟수를 뺀 값이 현재 질문의 실제 꼬리질문 예산
-    const remainingMaxTurns = Math.max(0, maxTurns - currentSkips)
+    const currentIsUnknownRetry = isUnknownRetryQuestion
     const studentAnswer = answer.trim()
 
     setBusy(true)
@@ -207,24 +211,33 @@ export default function SparScreen({
         expectedAnswerPoints,
         answer: studentAnswer,
         turn: currentTurn,
-        maxTurns: remainingMaxTurns,
+        maxTurns,
         difficulty,
         field,
         termHints: termDict,
+        isUnknownRetry: currentIsUnknownRetry,
       })
 
       const isUnknown = evaluation.answer_status === 'unknown'
+      const isFirstUnknown = isUnknown && !currentIsUnknownRetry
+      const hasNextQuestion = Boolean(evaluation.followup)
 
       pushMessage({
         role: 'verdict',
         personaId,
         text: isUnknown
-          ? `평가: ${evaluation.verdict}`
-          : `평가: ${evaluation.verdict}\n✅ ${evaluation.strengths}\n⚠️ ${evaluation.gaps}`,
+          ? isFirstUnknown && hasNextQuestion
+            ? '힌트를 확인한 뒤 더 쉬운 질문으로 한 번만 다시 답해 보세요.'
+            : hasNextQuestion
+              ? '이 질문은 여기까지 하고 다음 질문으로 넘어가겠습니다.'
+              : '이 질문은 여기까지 하고 다음 평가자로 넘어가겠습니다.'
+          : `평가: ${evaluation.verdict}
+✅ ${evaluation.strengths}
+⚠️ ${evaluation.gaps}`,
         rubric: isUnknown ? undefined : evaluation.rubric,
         answerStatus: evaluation.answer_status,
-        supplement: evaluation.supplement,
-        relatedSlides: evaluation.related_slides,
+        supplement: isFirstUnknown ? evaluation.supplement : undefined,
+        relatedSlides: isFirstUnknown ? evaluation.related_slides : [],
       })
 
       transcriptRef.current.push({
@@ -239,31 +252,36 @@ export default function SparScreen({
         related_slides: evaluation.related_slides,
       })
 
-      if (isUnknown && currentSkips < maxTurns) {
-        // 답변 불가 후 새 핵심 질문 전환.
-        // 소진 횟수는 skipsUsed로만 기록하고 turn은 0으로 리셋해,
-        // 새 root 질문에서도 첫 꼬리질문 유형 전환(turn=0 규칙)이 가능하게 한다.
-        setSkipsUsed(currentSkips + 1)
-        setTurn(0)
-        setQuestion(null)
-        setRootQuestion(null)
-        setRootQuestionType(null)
-        setQuestionType(null)
-        setQuestionFocus('')
-        setContextSlides([])
+      if (isFirstUnknown && evaluation.followup) {
+        // 현재 정상 질문에 대한 쉬운 재질문 1회 전환
+        const retryQuestionType =
+          evaluation.followup_question_type ?? 'definition'
+
+        setIsUnknownRetryQuestion(true)
+        setQuestion(evaluation.followup)
+        setQuestionType(retryQuestionType)
         setExpectedAnswerPoints([])
 
-        await loadFirstQuestion(personaIndex)
+        pushMessage({
+          role: 'question',
+          personaId,
+          text: evaluation.followup,
+          questionType: retryQuestionType,
+        })
+
+        setBusy(false)
         return
       }
 
       if (evaluation.followup) {
-        // 첫 꼬리질문 인접 유형 전환 지원
+        // 다음 정상 질문 전환 및 쉬운 재질문 상태 초기화
         const nextQuestionType =
           evaluation.followup_question_type ?? currentQuestionType
 
+        setIsUnknownRetryQuestion(false)
         setQuestion(evaluation.followup)
         setQuestionType(nextQuestionType)
+        setExpectedAnswerPoints([])
         setTurn(currentTurn + 1)
 
         pushMessage({
@@ -277,14 +295,13 @@ export default function SparScreen({
         return
       }
 
-      // 다음 페르소나 이동
+      // 다음 persona 이동 및 진행 상태 초기화
       const nextPersonaIndex = personaIndex + 1
 
       if (nextPersonaIndex < personaIds.length) {
         setPersonaIndex(nextPersonaIndex)
         setTurn(0)
-        // 답변 불가 예산은 persona 단위이므로 함께 리셋
-        setSkipsUsed(0)
+        setIsUnknownRetryQuestion(false)
         setQuestion(null)
         setRootQuestion(null)
         setRootQuestionType(null)
@@ -329,7 +346,15 @@ export default function SparScreen({
           </span>
           <div>
             <div className="text-base font-bold text-slate-800">{persona.name}</div>
-            <div className="text-sm text-slate-500">현재 상대 페르소나</div>
+            {/* 현재 화면 기준 남은 정상 질문 횟수 표시 */}
+            <div className="text-sm text-slate-500">
+              남은 질문 횟수 {remainingQuestionCount}회
+              <span className="ml-1.5 text-xs text-slate-400">
+                {isUnknownRetryQuestion
+                  ? '(쉬운 재질문 제외)'
+                  : '(현재 질문 포함)'}
+              </span>
+            </div>
           </div>
         </div>
 

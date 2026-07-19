@@ -338,9 +338,8 @@ def _is_mock_answer_sufficient(user: str) -> bool:
     """기대 답변 요소의 핵심 토큰이 답변에 충분히 등장하면 충분한 답변으로 판정.
 
     실제 LLM의 '답변이 질문의 명시적 요구를 모두 충족하면 followup=null' 흐름을
-    API 키 없이도 검증할 수 있게 하는 결정론적 근사이다.
-    각 기대 요소에서 2글자 이상 토큰을 뽑아, 모든 요소가 답변에서
-    최소 한 토큰 이상 발견되면 충분으로 본다.
+    API 키 없이도 검증할 수 있게 하는 결정론적 근사
+    -> 각 기대 요소에서 2글자 이상 토큰을 뽑아, 모든 요소가 답변에서 충분히 발견되면 충분으로 봄
     """
     answer = _extract_section(user, "학생 답변")
     expected = _extract_section(user, "기대 답변 요소")
@@ -358,14 +357,17 @@ def _is_mock_answer_sufficient(user: str) -> bool:
         tokens = re.findall(r"[A-Za-z0-9가-힣]{2,}", point)
         if not tokens:
             continue
-        if not any(token in answer for token in tokens):
+        # '개념', '기준' 같은 흔한 토큰 하나만으로 충분 판정이 나지 않도록,
+        # 토큰이 2개 이상인 요소는 최소 2개가 답변에 등장해야 일치로 본다.
+        matched = sum(1 for token in tokens if token in answer)
+        if matched < min(2, len(tokens)):
             return False
 
     return True
 
 
 def _mock_followup(user: str) -> tuple[Optional[str], Optional[str]]:
-    """중복을 피하고 첫 꼬리질문에서만 인접 유형으로 전환"""
+    """설정 횟수까지 꼬리질문 생성 및 첫 꼬리질문의 인접 유형 전환."""
     turn_match = re.search(r"turn=(\d+)", user)
     turn = int(turn_match.group(1)) if turn_match else 0
 
@@ -374,10 +376,6 @@ def _mock_followup(user: str) -> tuple[Optional[str], Optional[str]]:
     max_turns = int(max_turns_match.group(1)) if max_turns_match else 3
 
     if turn >= max_turns:
-        return None, None
-
-    # 충분한 답변이면 남은 횟수와 관계없이 종료한다 (1-4 확인 항목 검증용).
-    if _is_mock_answer_sufficient(user):
         return None, None
 
     question_type = _extract_section(user, "현재 질문 유형")
@@ -479,6 +477,45 @@ def _mock_answer_structure_tip(user: str) -> str:
     )
 
 
+_MOCK_UNKNOWN_NUANCE = re.compile(
+    r"모르겠|모릅니다|기억(?:이\s*)?(?:안\s*나|나지\s*않)|"
+    r"준비(?:를|가)?\s*(?:못|안)\s*(?:했|됐|되)|"
+    r"공부(?:를|가)?\s*(?:못|안)\s*(?:했|해)|"
+    r"배운\s*적(?:이)?\s*없|넘어가\s*주|패스|스킵|pass|skip"
+)
+
+
+def _mock_is_nuanced_unknown(answer: str) -> bool:
+    """서버 정규식을 통과한 뉘앙스형 답변 불가를 실제 LLM처럼 재분류
+
+    답변 불가 표현이 있고 그 외 실질적 내용이 거의 없으면 unknown으로 봄
+    불확실 표현 뒤에 실제 설명이 이어지는 경우는 answered를 유지
+    """
+    normalized = re.sub(r"\s+", " ", answer.strip())
+    if not normalized:
+        return False
+    if not _MOCK_UNKNOWN_NUANCE.search(normalized):
+        return False
+    # 답변 불가 표현을 제거한 나머지가 짧으면 실질 내용이 없다고 판단
+    stripped = _MOCK_UNKNOWN_NUANCE.sub("", normalized)
+    stripped = re.sub(r"[\s,.!?…]|그|음|어|아|좀|잘|그냥|사실|솔직히", "", stripped)
+    return len(stripped) < 20
+
+
+def _mock_unknown_retry(user: str) -> tuple[str, str]:
+    """답변 불가 뒤 동일 주제를 한 단계 낮춘 mock 재질문 생성."""
+    focus = _shorten(
+        _extract_section(user, "질문 초점"),
+        limit=55,
+    )
+
+    return (
+        f"힌트를 바탕으로, {focus}에서 가장 기본이 되는 의미나 관계 한 가지만 "
+        "말씀해 주실 수 있나요?",
+        "definition",
+    )
+
+
 def _call_mock(system: str, user: str, model: str) -> str:
     """API 키 없이 전체 흐름을 검사할 수 있는 JSON 응답을 반환"""
     _ = model
@@ -489,12 +526,20 @@ def _call_mock(system: str, user: str, model: str) -> str:
     if '"verdict"' in system and '"followup"' in system:
         answer_status = _extract_section(user, "답변 상태 사전 판정")
 
+        # 서버가 answered로 사전 판정했더라도, 뉘앙스형 답변 불가라면
+        # 실제 LLM처럼 unknown으로 재분류(프롬프트의 재분류 규칙 재현)
+        if answer_status != "unknown":
+            student_answer = _extract_section(user, "학생 답변")
+            if _mock_is_nuanced_unknown(student_answer):
+                answer_status = "unknown"
+
         if answer_status == "unknown":
             slide_section = _extract_section(user, "질문 관련 슬라이드")
             related_slides = [
                 int(index)
                 for index in re.findall(r"\[슬라이드\s+(\d+)\]", slide_section)[:2]
             ]
+            retry_question, retry_question_type = _mock_unknown_retry(user)
             return json.dumps(
                 {
                     "answer_status": "unknown",
@@ -506,8 +551,8 @@ def _call_mock(system: str, user: str, model: str) -> str:
                         "정의만 외우기보다 두 개념의 목적과 적용 대상을 구분해 정리하는 것이 좋습니다."
                     ),
                     "related_slides": related_slides,
-                    "followup": None,
-                    "followup_question_type": None,
+                    "followup": retry_question,
+                    "followup_question_type": retry_question_type,
                     "rubric": {},
                 },
                 ensure_ascii=False,
@@ -515,9 +560,8 @@ def _call_mock(system: str, user: str, model: str) -> str:
 
         followup, followup_question_type = _mock_followup(user)
 
-        # 충분한 답변으로 종료된 경우에는 verdict와 rubric도 충분 상태로 맞춰
-        # '충분 → followup=null → 다음 persona 이동' 흐름을 그대로 재현한다.
-        if followup is None and _is_mock_answer_sufficient(user):
+        # 충분 판정 유지 및 남은 설정 횟수만큼의 꼬리질문 진행
+        if _is_mock_answer_sufficient(user):
             return json.dumps(
                 {
                     "answer_status": "answered",
@@ -526,8 +570,8 @@ def _call_mock(system: str, user: str, model: str) -> str:
                     "gaps": "없음",
                     "supplement": None,
                     "related_slides": [],
-                    "followup": None,
-                    "followup_question_type": None,
+                    "followup": followup,
+                    "followup_question_type": followup_question_type,
                     "rubric": {
                         "직접성": "우수",
                         "근거": "보통",

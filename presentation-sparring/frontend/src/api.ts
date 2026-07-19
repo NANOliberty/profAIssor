@@ -85,6 +85,7 @@ export function evaluateAnswer(args: {
   difficulty: Difficulty
   field: AcademicField | null
   termHints?: string[]
+  isUnknownRetry?: boolean
 }): Promise<EvaluateResponse> {
   return post<EvaluateResponse>('/api/evaluate', {
     script: args.script,
@@ -103,6 +104,7 @@ export function evaluateAnswer(args: {
     difficulty: args.difficulty,
     field: args.field,
     term_hints: args.termHints ?? [],
+    is_unknown_retry: args.isUnknownRetry ?? false,
   })
 }
 

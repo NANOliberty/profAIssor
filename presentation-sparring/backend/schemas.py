@@ -94,6 +94,9 @@ class EvaluateRequest(BaseModel):
     # STT 오인식 보정에 사용할 발표 관련 용어
     term_hints: List[str] = Field(default_factory=list)
 
+    # 현재 질문의 답변 불가 뒤 제공된 쉬운 재질문 여부 표시
+    is_unknown_retry: bool = False
+
 
 class EvaluateResponse(BaseModel):
     verdict: str

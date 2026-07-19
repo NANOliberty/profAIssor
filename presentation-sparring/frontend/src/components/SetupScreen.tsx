@@ -72,6 +72,9 @@ export default function SetupScreen({ onStart }: Props) {
   // 대본 또는 슬라이드 단독 입력 지원
   const canStart = hasContent && selected.length > 0
 
+  // 기본 질문 1회를 포함한 평가자별 전체 질문 수 계산
+  const totalQuestionCount = maxTurns + 1
+
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <div className="space-y-2 text-center">
@@ -104,8 +107,8 @@ export default function SetupScreen({ onStart }: Props) {
               </button>
             </div>
             <p className="text-xs text-slate-400">
-              실제로 발표할 대본을 그대로 붙여넣으세요. AI 심사관이 이를 바탕으로
-              날카로운 꼬리 질문을 던집니다.
+              실제로 발표할 대본을 그대로 붙여넣으세요. AI 평가자가 자료를 바탕으로
+              예상 질문을 생성합니다.
             </p>
             <textarea
               id="script-textarea"
@@ -122,7 +125,7 @@ export default function SetupScreen({ onStart }: Props) {
               <Sparkles className="h-5 w-5 text-indigo-500" />
               발표자료 슬라이드 텍스트
             </label>
-            {/* 슬라이드 분석 목적 안내 재추가 */}
+            {/* 슬라이드 분석 목적 안내 */}
             <p className="text-xs text-slate-400">
               발표에서 빠진 슬라이드 내용을 함께 분석합니다.
             </p>
@@ -201,33 +204,41 @@ export default function SetupScreen({ onStart }: Props) {
             </div>
 
             <div className="space-y-2">
-              <span className="text-xs font-semibold text-slate-500">
-                최대 꼬리질문 횟수
-              </span>
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-semibold text-slate-500">
+                  질문 횟수 추가
+                </span>
+                <span className="text-[11px] text-slate-400">0~3회</span>
+              </div>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setMaxTurns((current) => Math.max(0, current - 1))}
                   disabled={maxTurns <= 0}
+                  aria-label="추가 질문 횟수 감소"
                   className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   −
                 </button>
-                <span className="w-6 text-center text-sm font-bold text-slate-800">
-                  {maxTurns}
+                <span className="w-10 text-center text-sm font-bold text-slate-800">
+                  {maxTurns}회
                 </span>
                 <button
                   type="button"
                   onClick={() => setMaxTurns((current) => Math.min(3, current + 1))}
                   disabled={maxTurns >= 3}
+                  aria-label="추가 질문 횟수 증가"
                   className="h-8 w-8 rounded-lg border border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   +
                 </button>
               </div>
-              {/* 꼬리질문 구성 안내 재추가 */}
               <p className="text-xs leading-relaxed text-slate-400">
-                총 질문을 {maxTurns + 1}회 진행합니다.
+                각 평가자마다 총{' '}
+                <span className="font-semibold text-slate-500">
+                  {totalQuestionCount}회
+                </span>{' '}
+                진행합니다.
               </p>
             </div>
 
