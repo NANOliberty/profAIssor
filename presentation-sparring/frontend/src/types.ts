@@ -33,7 +33,9 @@ export interface TranscriptTurn {
   question: string
   answer: string
   verdict: string
+  strengths: string
   gaps: string
+  rubric: Record<string, string>
 }
 
 export interface SlideExtractResponse {
