@@ -167,7 +167,9 @@ export default function SparScreen({
         question: currentQuestion,
         answer: studentAnswer,
         verdict: evaluation.verdict,
+        strengths: evaluation.strengths,
         gaps: evaluation.gaps,
+        rubric: evaluation.rubric,
       })
 
       if (evaluation.followup) {
