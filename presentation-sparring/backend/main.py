@@ -30,6 +30,7 @@ from schemas import (
     QuestionType,
     ReportRequest,
     ReportResponse,
+    Revision,
     Slide,
     SlideCoverage,
     SlideExtractResponse,
@@ -486,6 +487,65 @@ def _fallback_coverage(slide: Slide, script: str) -> SlideCoverage:
     return SlideCoverage(index=slide.index, covered=covered, missing_point=missing_point)
 
 
+_VALID_ACTION_TYPES = {
+    "sentence_split",
+    "signal_phrase",
+    "emphasis_shift",
+    "term_explanation",
+    "other",
+}
+
+
+def _parse_revisions(raw, *, valid_slide_indices: set[int], limit: int = 4) -> List[Revision]:
+    """LLM이 반환한 revisions 배열을 검증하고 최대 limit개만 남김
+
+    observation/impact/action/example 중 하나라도 비어 있으면 그 항목은
+    실행 가능한 코칭으로 보기 어려우므로 통째로 제외
+    """
+    if not isinstance(raw, list):
+        return []
+
+    result: List[Revision] = []
+
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        observation = str(item.get("observation", "")).strip()
+        impact = str(item.get("impact", "")).strip()
+        action = str(item.get("action", "")).strip()
+        example = str(item.get("example", "")).strip()
+
+        if not (observation and impact and action and example):
+            continue
+
+        action_type = item.get("action_type")
+        if action_type not in _VALID_ACTION_TYPES:
+            action_type = "other"
+
+        slide_index = item.get("slide_index")
+        if isinstance(slide_index, str) and slide_index.strip().isdigit():
+            slide_index = int(slide_index.strip())
+        if not isinstance(slide_index, int) or slide_index not in valid_slide_indices:
+            slide_index = None
+
+        result.append(
+            Revision(
+                slide_index=slide_index,
+                observation=observation[:300],
+                impact=impact[:300],
+                action_type=action_type,
+                action=action[:300],
+                example=example[:400],
+            )
+        )
+
+        if len(result) >= limit:
+            break
+
+    return result
+
+
 @app.post("/api/report", response_model=ReportResponse)
 def report(req: ReportRequest):
     system, user = prompts.build_report_prompt(req.script, req.slides, req.transcript)
@@ -531,6 +591,12 @@ def report(req: ReportRequest):
             else:
                 coverage.append(_fallback_coverage(slide, req.script))
 
+    valid_slide_indices = {slide.index for slide in req.slides}
+    revisions = _parse_revisions(
+        data.get("revisions"),
+        valid_slide_indices=valid_slide_indices,
+    )
+
     return ReportResponse(
         content_feedback=str(data.get("content_feedback", "")).strip(),
         delivery_feedback=str(data.get("delivery_feedback", "")).strip(),
@@ -538,4 +604,6 @@ def report(req: ReportRequest):
         slide_coverage=coverage,
         filler_count=_count_fillers(req.script),
         word_count=_word_count(req.script),
+        revisions=revisions,
+        answer_structure_tip=str(data.get("answer_structure_tip", "")).strip(),
     )

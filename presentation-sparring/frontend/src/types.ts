@@ -66,6 +66,22 @@ export interface SlideCoverage {
   missing_point: string | null
 }
 
+export type RevisionActionType =
+  | 'sentence_split'
+  | 'signal_phrase'
+  | 'emphasis_shift'
+  | 'term_explanation'
+  | 'other'
+
+export interface Revision {
+  slide_index: number | null
+  observation: string
+  impact: string
+  action_type: RevisionActionType
+  action: string
+  example: string
+}
+
 export interface Report {
   content_feedback: string
   delivery_feedback: string
@@ -73,6 +89,12 @@ export interface Report {
   slide_coverage: SlideCoverage[]
   filler_count: number
   word_count: number
+
+  // 1-4C: 관찰→영향→수정 행동→수정 예시 구조의 구체적 코칭
+  // 옵셔널로 두어 이전에 저장된 localStorage 세션(SessionRecord)도
+  // 필드 없이 그대로 렌더링될 수 있게 함
+  revisions?: Revision[]
+  answer_structure_tip?: string
 }
 
 export type Stage = 'setup' | 'spar' | 'report' | 'history'

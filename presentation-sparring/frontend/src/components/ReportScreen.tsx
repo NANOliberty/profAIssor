@@ -1,7 +1,7 @@
-import { Brain, Mic, RotateCcw, Shield, Target } from 'lucide-react'
+import { Brain, Lightbulb, ListChecks, Mic, RotateCcw, Shield, Target } from 'lucide-react'
 import { coverageRate } from '../lib/coverage'
 import { loadSessions } from '../lib/sessionStore'
-import type { Report } from '../types'
+import type { Report, RevisionActionType } from '../types'
 
 interface Props {
   report: Report
@@ -85,6 +85,63 @@ export default function ReportScreen({ report, onRestart }: Props) {
         </div>
       </section>
 
+      {/* concrete revision suggestions — 1-4C */}
+      {report.revisions && report.revisions.length > 0 && (
+        <section className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-sm">
+          <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800">
+            <ListChecks className="h-5 w-5 text-indigo-600" />
+            대본 수정 제안
+            <span className="text-xs font-normal text-slate-400">
+              (관찰 → 영향 → 수정 행동 → 예시 순서)
+            </span>
+          </h2>
+
+          <div className="space-y-3">
+            {report.revisions.map((revision, index) => (
+              <div
+                key={index}
+                className="space-y-2 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-bold text-indigo-700">
+                    {ACTION_TYPE_LABEL[revision.action_type]}
+                  </span>
+                  {revision.slide_index != null && (
+                    <span className="text-xs font-semibold text-slate-400">
+                      슬라이드 {revision.slide_index}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold text-slate-500">관찰 · </span>
+                  {revision.observation}
+                </p>
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold text-slate-500">영향 · </span>
+                  {revision.impact}
+                </p>
+                <p className="text-sm text-slate-700">
+                  <span className="font-semibold text-slate-500">수정 행동 · </span>
+                  {revision.action}
+                </p>
+                <p className="whitespace-pre-wrap rounded-lg bg-white px-3 py-2 text-sm text-indigo-700 shadow-sm">
+                  {revision.example}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* recommended answer structure — 1-4C */}
+      {report.answer_structure_tip && (
+        <div className="flex items-start gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+          <Lightbulb className="mt-0.5 h-5 w-5 shrink-0 text-indigo-500" />
+          <p className="text-sm leading-relaxed text-indigo-900">{report.answer_structure_tip}</p>
+        </div>
+      )}
+
       {/* delivery metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Metric
@@ -118,6 +175,14 @@ export default function ReportScreen({ report, onRestart }: Props) {
       </button>
     </div>
   )
+}
+
+const ACTION_TYPE_LABEL: Record<RevisionActionType, string> = {
+  sentence_split: '문장 분리',
+  signal_phrase: '신호 문장 추가',
+  emphasis_shift: '강조 위치 이동',
+  term_explanation: '용어 설명 추가',
+  other: '수정 제안',
 }
 
 function Card({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {

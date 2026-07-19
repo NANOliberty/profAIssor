@@ -541,12 +541,31 @@ def build_evaluate_prompt(
     return system, user
 
 
+_REVISION_ACTION_GUIDE = """
+[수정 행동 유형]
+
+revisions의 각 항목은 다음 네 유형 중 가장 가까운 하나를 action_type으로 선택하세요.
+자유 서술이 아니라 실행 가능한 행동 하나로 좁혀야 합니다.
+
+- sentence_split: 한 문장에 여러 정보(개념+근거+예시 등)가 몰려 있어 나눠 말해야 하는 경우
+- signal_phrase: "정리하면", "차이점은", "결론부터 말씀드리면" 같은 구조 신호 문장이 없어서
+  청중이 흐름을 놓치기 쉬운 경우
+- emphasis_shift: 핵심 내용이 문장 뒤쪽이나 부수적인 위치에 묻혀 있어 앞으로 옮겨야 하는 경우
+- term_explanation: 전문 용어나 축약된 표현이 풀이 없이 등장해 배경지식이 없는 청중이
+  이해하기 어려운 경우
+- other: 위 네 유형에 해당하지 않지만 구체적으로 지적할 수 있는 경우에만 사용
+
+같은 관찰에 여러 유형을 섞지 말고, 대본이나 슬라이드 텍스트에서 실제로 확인되는
+사실만 observation에 적으세요. 관찰되지 않은 문제를 짐작해서 만들지 마세요.
+"""
+
+
 def build_report_prompt(
     script: str,
     slides: List[Slide],
     transcript: List[TranscriptTurn],
 ):
-    """텍스트 자료만으로 종합 피드백과 슬라이드 커버리지를 생성합니다."""
+    """텍스트 자료만으로 종합 피드백, 슬라이드 커버리지, 구체적 수정 제안을 생성"""
     system = (
         "발표 대본, 슬라이드, 질의응답 텍스트만 근거로 평가하세요. "
         "내용은 근거·구조·결과 해석, "
@@ -554,12 +573,35 @@ def build_report_prompt(
         "대응은 질문 이해·직접성·근거 제시를 평가합니다. "
         "음성 정보가 없으므로 속도, 억양, 음량, 자신감, 긴장 상태를 추측하지 마세요. "
         "슬라이드 핵심이 대본에서 의미 있게 설명됐을 때만 covered=true로 두세요.\n"
+        f"{_REVISION_ACTION_GUIDE}\n"
+        "[revisions 작성 순서]\n"
+        "1. 대본과 슬라이드, 질의응답 기록에서 개선 여지가 있는 지점을 최대 4곳 고르세요.\n"
+        "2. 각 지점마다 observation(실제 관찰), impact(청중 이해에 미치는 영향), "
+        "action_type과 action(구체적 행동), example(대본에 바로 넣을 문장) 순서로 작성하세요.\n"
+        "3. 슬라이드 커버리지 미달 지점이 있다면 최소 하나는 그 슬라이드 번호를 "
+        "slide_index로 지정하고, 그 슬라이드의 누락 핵심을 채우는 문장을 example로 제시하세요.\n"
+        "4. 답변 대응이 약했던 지점이 있다면 최소 하나는 그 질문과 관련된 revision을 만드세요.\n"
+        "5. 근거 없이 만든 문제를 지적하지 말고, 실제로 확인 가능한 지점이 4개보다 적으면 "
+        "그 개수만큼만 작성하세요.\n\n"
+        "answer_structure_tip에는 질의응답 대응 기록을 바탕으로 결론→근거→한계(또는 예외) "
+        "순서로 답하는 습관을 권장하는 한국어 2~3문장을 작성하세요. "
+        "특정 질문에 실제로 부족했던 부분이 있었다면 그 사례를 근거로 구체적으로 설명하세요.\n"
         'JSON만 반환: {"content_feedback": "<내용>", '
         '"delivery_feedback": "<텍스트 기준 전달>", '
         '"response_feedback": "<대응>", '
         '"slide_coverage": ['
         '{"index": 1, "covered": true, "missing_point": null}'
-        "]}"
+        "], "
+        '"revisions": ['
+        '{"slide_index": <정수 또는 null>, '
+        '"observation": "<대본·슬라이드에서 확인된 사실 1문장>", '
+        '"impact": "<청중 이해에 미치는 영향 1문장>", '
+        '"action_type": "sentence_split|signal_phrase|emphasis_shift|term_explanation|other", '
+        '"action": "<구체적 행동 1문장>", '
+        '"example": "<대본에 추가·수정할 한국어 문장 예시>"}'
+        "], "
+        '"answer_structure_tip": "<결론-근거-한계 순서 권장 안내 2~3문장>"'
+        "}"
     )
 
     transcript_text = "\n".join(

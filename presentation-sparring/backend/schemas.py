@@ -134,6 +134,38 @@ class TranscriptTurn(BaseModel):
     related_slides: List[int] = Field(default_factory=list)
 
 
+# 리포트가 슬라이드/대본 수정을 구체적으로 제안할 때 사용하는 행동 유형
+# 자유 서술이 아니라 유형을 고정해 두면 프론트에서 아이콘·필터링이 가능하고,
+# LLM이 막연한 조언 대신 실행 가능한 행동 하나를 고르도록 유도할 수 있음
+RevisionActionType = Literal[
+    "sentence_split",      # 문장 분리 — 한 문장에 여러 정보가 몰린 경우
+    "signal_phrase",       # 신호 문장 추가 — "정리하면", "차이점은" 등 구조 안내
+    "emphasis_shift",      # 강조 위치 이동 — 핵심을 문장 앞/뒤로 이동
+    "term_explanation",    # 용어 설명 추가 — 전문 용어에 쉬운 풀이 덧붙이기
+    "other",
+]
+
+
+class Revision(BaseModel):
+    """관찰→영향→수정 행동→수정 예시 구조의 개별 코칭 항목."""
+
+    slide_index: Optional[int] = None
+
+    # 대본·답변에서 실제로 관찰된 사실 한 문장 (판단이 아니라 관찰)
+    observation: str
+
+    # 그 관찰이 청중 이해에 미치는 영향 한 문장
+    impact: str
+
+    action_type: RevisionActionType = "other"
+
+    # 위 네 범주 중 하나를 구체화한 실행 지시 한 문장
+    action: str
+
+    # 대본에 실제로 넣을 수 있는 한국어 문장 예시
+    example: str
+
+
 class ReportRequest(BaseModel):
     script: str
     slides: List[Slide] = Field(default_factory=list)
@@ -154,3 +186,9 @@ class ReportResponse(BaseModel):
     slide_coverage: List[SlideCoverage]
     filler_count: int
     word_count: int
+
+    # 1-4C: 관찰→영향→수정 행동→수정 예시 구조의 구체적 코칭 항목
+    # 기존 저장 데이터(localStorage SessionRecord)와의 호환을 위해
+    # 기본값을 빈 리스트/빈 문자열로 두어 이전 리포트도 그대로 읽힘
+    revisions: List[Revision] = Field(default_factory=list)
+    answer_structure_tip: str = ""

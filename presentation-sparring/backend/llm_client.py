@@ -421,6 +421,64 @@ def _mock_followup(user: str) -> tuple[Optional[str], Optional[str]]:
     return templates.get(question_type, templates["definition"]), question_type or "definition"
 
 
+def _mock_report_revisions(user: str) -> list[dict]:
+    """슬라이드와 질의응답 기록에서 결정론적으로 1~2개의 수정 제안을 만듦
+
+    API 키 없이도 프론트가 revisions 렌더링을 검증할 수 있게 하는 목적이며,
+    실제 LLM 판단을 흉내 내기보다 스키마와 흐름을 재현하는 데 집중
+    """
+    slide_section = _extract_section(user, "슬라이드")
+    slide_matches = re.findall(r"\[슬라이드\s+(\d+)\]\s*(.*)", slide_section)
+
+    revisions: list[dict] = []
+
+    if slide_matches:
+        index, text = slide_matches[0]
+        revisions.append(
+            {
+                "slide_index": int(index),
+                "observation": (
+                    f"슬라이드 {index}의 핵심 문구 '{_shorten(text, limit=40)}'가 "
+                    "대본에서 풀어서 설명되지 않고 그대로 낭독되었습니다."
+                ),
+                "impact": "배경지식이 없는 청중은 해당 개념의 의미를 놓칠 수 있습니다.",
+                "action_type": "term_explanation",
+                "action": "핵심 용어가 처음 등장할 때 쉬운 말로 한 번 풀어서 설명하세요.",
+                "example": f"'{_shorten(text, limit=30)}'은 쉽게 말하면 ~라는 의미입니다.",
+            }
+        )
+
+    transcript_section = _extract_section(user, "질의응답")
+    gap_match = re.search(r"부족:\s*([^\n]+)", transcript_section)
+    if gap_match and gap_match.group(1).strip() not in ("", "없음"):
+        revisions.append(
+            {
+                "slide_index": None,
+                "observation": f"질의응답에서 '{_shorten(gap_match.group(1))}' 지점이 부족하다고 평가되었습니다.",
+                "impact": "질문의 핵심을 짚었더라도 근거 없이는 설득력이 떨어질 수 있습니다.",
+                "action_type": "signal_phrase",
+                "action": "답변을 결론부터 말한 뒤 근거를 덧붙이는 순서로 재구성하세요.",
+                "example": "결론부터 말씀드리면 ~입니다. 그 이유는 ~이기 때문입니다.",
+            }
+        )
+
+    return revisions
+
+
+def _mock_answer_structure_tip(user: str) -> str:
+    transcript_section = _extract_section(user, "질의응답")
+    if "부족:" in transcript_section and "없음" not in transcript_section.split("부족:")[1][:10]:
+        return (
+            "질문을 받으면 먼저 결론을 한 문장으로 말한 뒤 근거를 붙이고, "
+            "마지막에 한계나 예외를 짧게 덧붙이는 순서를 연습하세요. "
+            "지금은 근거 제시가 결론보다 늦게 나오는 경우가 있었습니다."
+        )
+    return (
+        "질문을 받으면 결론→근거→한계 순서로 답하는 습관을 유지하세요. "
+        "특히 압박 질문에서는 결론을 먼저 말해야 청중이 흐름을 놓치지 않습니다."
+    )
+
+
 def _call_mock(system: str, user: str, model: str) -> str:
     """API 키 없이 전체 흐름을 검사할 수 있는 JSON 응답을 반환"""
     _ = model
@@ -512,6 +570,8 @@ def _call_mock(system: str, user: str, model: str) -> str:
                 "압박 질문에서 근거로 방어하는 훈련이 필요합니다."
             ),
             "slide_coverage": [],
+            "revisions": _mock_report_revisions(user),
+            "answer_structure_tip": _mock_answer_structure_tip(user),
         },
         ensure_ascii=False,
     )
