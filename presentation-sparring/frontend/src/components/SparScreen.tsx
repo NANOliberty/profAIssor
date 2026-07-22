@@ -71,6 +71,7 @@ export default function SparScreen({
 
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const answerInputRef = useRef<HTMLTextAreaElement>(null)
 
   // STT 용어 사전 재사용
   const termDict = useMemo(() => buildTermDictionary(script, slides), [script, slides])
@@ -169,6 +170,14 @@ export default function SparScreen({
       behavior: 'smooth',
     })
   }, [messages])
+
+  // 답변 제출 후(busy 종료) 다음 질문이 준비되면 답변창에 포커스를 되돌려,
+  // 매번 입력창을 다시 클릭하지 않고 연속으로 답할 수 있게 한다.
+  useEffect(() => {
+    if (!busy && question && !readyForReport) {
+      answerInputRef.current?.focus()
+    }
+  }, [busy, question, readyForReport])
 
   const submit = async () => {
     if (!question || !answer.trim() || busy || readyForReport) return
@@ -333,7 +342,13 @@ export default function SparScreen({
   }
 
   const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+    // Enter 전송, Shift+Enter 줄바꿈. 한글 IME 조합 중 Enter(글자 확정)는
+    // isComposing으로 걸러 오전송을 막는다.
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      !(event.nativeEvent as { isComposing?: boolean }).isComposing
+    ) {
       event.preventDefault()
       void submit()
     }
@@ -567,6 +582,7 @@ export default function SparScreen({
           )}
 
           <textarea
+            ref={answerInputRef}
             value={answer}
             onChange={(event) => setAnswer(event.target.value)}
             onKeyDown={onKeyDown}
@@ -574,8 +590,8 @@ export default function SparScreen({
             rows={2}
             placeholder={
               sttSupported
-                ? '답변을 입력하거나 마이크로 말하세요. (Ctrl/⌘ + Enter 전송)'
-                : '답변을 입력하세요. (Ctrl/⌘ + Enter 전송)'
+                ? '답변을 입력하거나 마이크로 말하세요. (Enter 전송, Shift+Enter 줄바꿈)'
+                : '답변을 입력하세요. (Enter 전송, Shift+Enter 줄바꿈)'
             }
             className="min-h-12 min-w-0 flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50/50 px-3.5 py-3 text-base leading-relaxed text-slate-700 outline-none transition focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 sm:px-4"
           />
