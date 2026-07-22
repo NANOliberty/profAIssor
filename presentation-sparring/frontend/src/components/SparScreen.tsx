@@ -1,7 +1,9 @@
 import { Mic, Send, Square } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { evaluateAnswer, fetchQuestion } from '../api'
+import { useMicMetrics } from '../hooks/useMicMetrics'
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition'
+import { getBrowserSupport } from '../lib/browserSupport'
 import { buildTermDictionary, correctText } from '../lib/termCorrection'
 import { getPersona } from '../personas'
 import type {
@@ -141,25 +143,43 @@ export default function SparScreen({
   const startedRef = useRef(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const answerInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const answerRef = useRef('')
 
+  const browserSupport = useMemo(() => getBrowserSupport(), [])
   const termDict = useMemo(
     () => buildTermDictionary(script, slides),
     [script, slides],
   )
 
   const {
+    available: metricAvailable,
+    recording: metricRecording,
+    error: metricError,
+    startUserSegment,
+    stopUserSegment,
+    finalizeAnswer,
+    resetAnswer: resetSpeechMetrics,
+  } = useMicMetrics()
+
+  const {
     supported: sttSupported,
     listening,
     micError,
-    toggle: toggleMic,
-    stop: stopMic,
+    start: startMic,
+    stopAndFlush,
+    getTranscript,
+    resetTranscript,
   } = useSpeechRecognition({
     onFinal: (text) => {
       if (!text) return
       const corrected = correctText(text, termDict)
-      setAnswer((previous) =>
-        (previous.trim() ? `${previous.trimEnd()} ` : '') + corrected,
-      )
+
+      setAnswer((previous) => {
+        const nextAnswer =
+          (previous.trim() ? `${previous.trimEnd()} ` : '') + corrected
+        answerRef.current = nextAnswer
+        return nextAnswer
+      })
     },
     onInterim: setInterim,
   })
@@ -169,6 +189,7 @@ export default function SparScreen({
   const totalQuestionCount = maxTurns + 1
   const remainingQuestionCount = Math.max(0, totalQuestionCount - turn)
   const isUnknownRetryQuestion = questionState?.questionRole === 'retry'
+  const displayedMicError = micError ?? metricError
 
   const pushMessage = (message: ChatMessage) => {
     setMessages((previous) => [...previous, message])
@@ -284,21 +305,68 @@ export default function SparScreen({
     }
   }, [busy, questionState, readyForReport])
 
-  const submit = async () => {
-    if (!questionState || !answer.trim() || busy || readyForReport) return
+  useEffect(() => {
+    if (micError && metricRecording) {
+      stopUserSegment()
+    }
+  }, [metricRecording, micError, stopUserSegment])
 
-    stopMic()
+  /** textarea와 ref의 답변 동기화. */
+  const updateAnswer = (value: string) => {
+    answerRef.current = value
+    setAnswer(value)
+  }
+
+  /** STT와 RMS 수집의 사용자 마이크 버튼 동기화. */
+  const handleMicToggle = async () => {
+    if (busy || !questionState) return
+
+    if (listening) {
+      stopUserSegment()
+      await stopAndFlush()
+      setInterim('')
+      return
+    }
+
+    const metricStarted = metricAvailable
+      ? await startUserSegment()
+      : false
+
+    const started = startMic()
+    if (!started && metricStarted) {
+      stopUserSegment()
+    }
+  }
+
+  const submit = async () => {
+    if (!questionState || busy || readyForReport) return
+
+    let rawFinalSttText = getTranscript()
+
+    if (listening) {
+      stopUserSegment()
+      rawFinalSttText = await stopAndFlush()
+    }
+
     setInterim('')
+
+    const studentAnswer = answerRef.current.trim()
+    if (!studentAnswer) return
+
+    const speechMetrics = finalizeAnswer(
+      rawFinalSttText,
+      studentAnswer,
+    )
+    resetTranscript()
 
     const personaId = activePersonaId
     const currentState = questionState
     const currentTurn = turn
-    const studentAnswer = answer.trim()
 
     setBusy(true)
     setError(null)
     pushMessage({ role: 'answer', personaId, text: studentAnswer })
-    setAnswer('')
+    updateAnswer('')
 
     try {
       const evaluation = await evaluateAnswer({
@@ -330,6 +398,8 @@ export default function SparScreen({
       )
 
       if (action === 'retry_after_unknown' && evaluation.retry_question) {
+        // 최초 무응답의 음성 지표는 기존 transcript 정책에 맞춰 폐기
+        resetSpeechMetrics()
         pushMessage({
           role: 'verdict',
           personaId,
@@ -397,6 +467,9 @@ export default function SparScreen({
             ? currentState.contextSlides
             : [],
         rubric: evaluation.rubric,
+        ...(speechMetrics
+          ? { speech_metrics: speechMetrics }
+          : {}),
       })
 
       if (action === 'ask_followup' && evaluation.followup) {
@@ -468,6 +541,19 @@ export default function SparScreen({
       event.preventDefault()
       void submit()
     }
+  }
+
+  if (!browserSupport.supported) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+        <div className="text-lg font-bold text-slate-900">
+          음성 스파링 지원 환경 확인
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          {browserSupport.message}
+        </p>
+      </div>
+    )
   }
 
   return (
@@ -621,21 +707,12 @@ export default function SparScreen({
           </div>
         )}
 
-        {micError && !readyForReport && (
+        {displayedMicError && !readyForReport && (
           <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            {micError}
+            {displayedMicError}
           </div>
         )}
 
-        {listening && !readyForReport && (
-          <div className="flex items-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-rose-500" />
-            <span className="font-semibold">받아쓰는 중…</span>
-            <span className="min-w-0 text-slate-500">
-              {interim || '(말해 보세요)'}
-            </span>
-          </div>
-        )}
       </div>
 
       {readyForReport ? (
@@ -657,12 +734,23 @@ export default function SparScreen({
           </button>
         </div>
       ) : (
-        <div className="sticky bottom-0 z-10 flex shrink-0 gap-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-lg backdrop-blur sm:p-3">
-          {sttSupported && (
+        <div className="sticky bottom-0 z-10 shrink-0 space-y-2 rounded-2xl border border-slate-200/80 bg-white/95 p-2.5 shadow-lg backdrop-blur sm:p-3">
+          {listening && (
+            <div className="flex min-w-0 items-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-2.5 text-sm text-rose-700">
+              <span className="inline-block h-2 w-2 shrink-0 animate-pulse rounded-full bg-rose-500" />
+              <span className="shrink-0 font-semibold">받아쓰는 중…</span>
+              <span className="min-w-0 flex-1 truncate text-slate-600">
+                {interim || '말해 보세요.'}
+              </span>
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            {sttSupported && (
             <button
               type="button"
               data-testid="mic-btn"
-              onClick={toggleMic}
+              onClick={() => void handleMicToggle()}
               disabled={busy || !questionState}
               title={listening ? '받아쓰기 중지' : '음성으로 답변 (STT)'}
               className={
@@ -683,7 +771,9 @@ export default function SparScreen({
           <textarea
             ref={answerInputRef}
             value={answer}
-            onChange={(event) => setAnswer(event.target.value)}
+            onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) =>
+              updateAnswer(event.target.value)
+            }
             onKeyDown={onKeyDown}
             disabled={busy || !questionState}
             rows={2}
@@ -698,13 +788,18 @@ export default function SparScreen({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={busy || !questionState || !answer.trim()}
+            disabled={
+              busy ||
+              !questionState ||
+              (!answer.trim() && !listening)
+            }
             aria-label="답변 전송"
             className="flex h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40 sm:px-6"
           >
             <Send className="h-5 w-5" />
             <span className="hidden sm:inline">답변</span>
           </button>
+          </div>
         </div>
       )}
     </div>

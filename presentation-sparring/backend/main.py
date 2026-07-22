@@ -20,6 +20,7 @@ import material_context
 import pdf_extract
 import ppt_extract
 import prompts
+import speech_metrics
 from personas import (
     get_field_hint,
     get_model_hint,
@@ -1059,6 +1060,9 @@ def _parse_revisions(raw, *, valid_slide_indices: set[int], limit: int = 4) -> L
 
 @app.post("/api/report", response_model=ReportResponse)
 def report(req: ReportRequest):
+    speech_summary, speech_delivery_feedback = speech_metrics.build_speech_report(
+        req.transcript
+    )
     system, user = prompts.build_report_prompt(req.script, req.slides, req.transcript)
     try:
         data = llm_client.chat_json(system, user)
@@ -1114,8 +1118,19 @@ def report(req: ReportRequest):
         delivery_feedback=str(data.get("delivery_feedback", "")).strip(),
         response_feedback=str(data.get("response_feedback", "")).strip(),
         slide_coverage=coverage,
-        filler_count=_count_fillers(req.script),
+        filler_count=(
+            speech_summary.recognized_filler_count
+            if speech_summary is not None
+            else 0
+        ),
+        filler_count_mode=(
+            "recognized_minimum"
+            if speech_summary is not None
+            else "unavailable"
+        ),
         word_count=_word_count(req.script),
+        speech_summary=speech_summary,
+        speech_delivery_feedback=speech_delivery_feedback,
         revisions=revisions,
         answer_structure_tip=str(data.get("answer_structure_tip", "")).strip(),
     )
