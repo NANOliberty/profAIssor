@@ -10,6 +10,8 @@ QuestionTypePolicy = Dict[str, QuestionTypePriority]
 PERSONAS: Dict[str, dict] = {
     "standard": {
         "name": "기본 발표 평가자",
+        "emoji": "💡",
+        "blurb": "발표 목적과 핵심 메시지를 확인하는 기본 질문으로 질의응답을 먼저 연습합니다.",
         "question_type_policy": {
             "primary": ("definition", "evidence"),
             "secondary": ("application",),
@@ -35,6 +37,8 @@ PERSONAS: Dict[str, dict] = {
     },
     "professor": {
         "name": "까다로운 교수",
+        "emoji": "🎓",
+        "blurb": "발표의 근거, 정의와 논리적 타당성을 검증합니다.",
         "question_type_policy": {
             "primary": ("evidence", "definition"),
             "secondary": ("counterexample",),
@@ -56,6 +60,8 @@ PERSONAS: Dict[str, dict] = {
     },
     "peer": {
         "name": "디테일 파는 동료",
+        "emoji": "🔎",
+        "blurb": "반례와 예외 상황, 놓친 조건과 실제 적용 가능성을 점검합니다.",
         "question_type_policy": {
             "primary": ("counterexample", "application"),
             "secondary": ("evidence",),
@@ -76,6 +82,8 @@ PERSONAS: Dict[str, dict] = {
     },
     "layperson": {
         "name": "배경지식 없는 청중",
+        "emoji": "🙋",
+        "blurb": "전문 용어의 쉬운 의미와 실제 활용 방식을 확인합니다.",
         "question_type_policy": {
             "primary": ("definition", "application"),
             "secondary": ("evidence",),
@@ -94,6 +102,20 @@ PERSONAS: Dict[str, dict] = {
         ),
     },
 }
+
+
+
+def list_personas() -> list[dict]:
+    """프론트 표시용 공개 페르소나 목록 반환."""
+    return [
+        {
+            "id": persona_id,
+            "name": str(persona.get("name", persona_id)),
+            "emoji": str(persona.get("emoji", "")),
+            "blurb": str(persona.get("blurb", "")),
+        }
+        for persona_id, persona in PERSONAS.items()
+    ]
 
 
 DEFAULT_PERSONA = "standard"

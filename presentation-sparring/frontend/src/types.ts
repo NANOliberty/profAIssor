@@ -1,4 +1,5 @@
-export type PersonaId = 'standard' | 'professor' | 'peer' | 'layperson'
+/** 백엔드 페르소나 목록에서 전달되는 식별자. */
+export type PersonaId = string
 export type Difficulty = 'easy' | 'medium' | 'hard'
 export type AcademicField = 'engineering' | 'humanities' | 'natural'
 export type QuestionType =
