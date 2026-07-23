@@ -2,6 +2,7 @@ import type {
   AcademicField,
   Difficulty,
   EvaluateResponse,
+  Persona,
   PersonaId,
   QuestionResponse,
   QuestionRole,
@@ -229,6 +230,14 @@ async function post<T>(
     body: JSON.stringify(body),
   })
 }
+
+/** 백엔드 단일 원본의 공개 페르소나 목록 조회. */
+export function fetchPersonas(): Promise<Persona[]> {
+  return request<Persona[]>('/api/personas', {
+    method: 'GET',
+  })
+}
+
 
 /** PPTX·PDF 파일의 페이지별 텍스트 추출 요청. */
 export async function extractSlides(

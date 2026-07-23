@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import llm_client
-from routers import evaluate, questions, report, slides
+from routers import evaluate, personas, questions, report, slides
 
 logging.basicConfig(level=logging.INFO)
 
@@ -56,6 +56,7 @@ def health():
 
 
 app.include_router(slides.router)
+app.include_router(personas.router)
 app.include_router(questions.router)
 app.include_router(evaluate.router)
 app.include_router(report.router)

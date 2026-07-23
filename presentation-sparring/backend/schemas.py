@@ -32,6 +32,15 @@ class Slide(BaseModel):
     text: str
 
 
+class PersonaSummary(BaseModel):
+    """프론트 표시용 공개 페르소나 정보."""
+
+    id: str
+    name: str
+    emoji: str
+    blurb: str
+
+
 # --- /api/slides/extract ---
 class SlideExtractResponse(BaseModel):
     slides: List[Slide]
